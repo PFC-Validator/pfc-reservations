@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+docker run --rm -e POSTGRES_PASSWORD=XXXXXXXX -e POSTGRES_DB=nft_reservation -e POSTGRES_USER=nft -i -t -p 5435:5432 -v $HOME/docker/volumes/nft:/var/lib/postgresql/data --name nft_db -d postgres
