@@ -15,6 +15,14 @@ fn main() {
             name: args.get(1).unwrap().clone(),
             meta: args.get(2).unwrap().clone(),
             svg: args.get(3).unwrap().clone(),
+            ipfs_image: "".to_string(),
+            ipfs_meta: "".to_string(),
+            image_data: None,
+            external_url: None,
+            description: None,
+            background_color: None,
+            animation_url: None,
+            youtube_url: None
         };
         let json = serde_json::to_string(&new_nft).unwrap();
         let secp: Secp256k1<All> = Secp256k1::new();

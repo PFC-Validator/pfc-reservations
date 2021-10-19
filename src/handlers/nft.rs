@@ -105,14 +105,33 @@ async fn new_nft(
                 .run(move |c| {
                     let stmt: Statement = c
                         .prepare(
-                            "Insert into NFT(id,name,meta_data,svg) values(DEFAULT,$1,$2,$3) returning id",
+                            r#"Insert into NFT( id,name,meta_data,svg,ipfs_image,
+                                                ipfs_meta, image_data, external_url,
+                                                description,background_color,
+                                                animation_url,youtube_url       
+                            values(DEFAULT,$1,$2,$3,$4, $5,$6,$7, $8,$9, $10,$11) returning id"#,
                         )
                         .unwrap();
-                    c.query(&stmt, &[&nft_in_stuff.name, &meta_json, &svg_json])
+                    c.query(
+                        &stmt,
+                        &[
+                            &nft_in_stuff.name,
+                            &meta_json,
+                            &svg_json,
+                            &nft_in_stuff.ipfs_image,
+                            &nft_in_stuff.ipfs_meta,
+                            &nft_in_stuff.image_data,
+                            &nft_in_stuff.external_url,
+                            &nft_in_stuff.description,
+                            &nft_in_stuff.background_color,
+                            &nft_in_stuff.animation_url,
+                            &nft_in_stuff.youtube_url,
+                        ],
+                    )
                 })
-                .await {
-                Ok( new_nft) => {
-
+                .await
+            {
+                Ok(new_nft) => {
                     let row = new_nft.first();
                     let id_returned: Uuid = row.unwrap().get(0);
                     log::info!("{:?}", id_returned);
@@ -120,14 +139,14 @@ async fn new_nft(
                         nft_id: id_returned,
                     };
                     (Status::new(201), Ok(Json(response)))
-                },
-                Err(db_err) =>
-                    (Status::new(500),
+                }
+                Err(db_err) => (
+                    Status::new(500),
                     Err(Json(ErrorResponse {
                         code: 500,
                         message: db_err.to_string(),
-                    })))
-
+                    })),
+                ),
             }
         }
         Err(e) => (

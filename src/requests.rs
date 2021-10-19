@@ -7,6 +7,14 @@ pub struct NewNFTRequest {
     pub name: String,
     pub meta: String,
     pub svg: String,
+    pub ipfs_image: String,
+    pub ipfs_meta: String,
+    pub image_data: Option<String>,
+    pub external_url: Option<String>,
+    pub description: Option<String>,
+    pub background_color: Option<String>,
+    pub animation_url: Option<String>,
+    pub youtube_url: Option<String>,
 }
 #[derive(Serialize)]
 pub struct NewNFTResponse {
