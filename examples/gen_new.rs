@@ -1,5 +1,4 @@
 use pfc_reservation::requests::NewNFTRequest;
-use reservation::requests::NewNFTRequest;
 use secp256k1::{All, Secp256k1};
 use std::env;
 use terra_rust_api::PrivateKey;

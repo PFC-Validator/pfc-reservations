@@ -1,5 +1,7 @@
+use pfc_reservation::requests::ErrorResponse;
 use rocket::http::Status;
 use rocket::request::{FromRequest, Outcome};
+use rocket::serde::json::Json;
 use rocket::Request;
 use secp256k1::{All, Message, PublicKey, Secp256k1, Signature};
 use sha2::{Digest, Sha256};
@@ -40,6 +42,7 @@ pub fn verify_signature(
     let pub_key: PublicKey = PublicKey::from_slice(&pub_key_bytes)?;
     Ok(secp.verify(&hash_message, &sig_sec, &pub_key)?)
 }
+
 #[rocket::async_trait]
 impl<'r> FromRequest<'r> for SignatureB64 {
     type Error = SignatureError;
@@ -52,5 +55,15 @@ impl<'r> FromRequest<'r> for SignatureB64 {
         } else {
             Outcome::Failure((Status::Forbidden, SignatureError::MissingHeader))
         }
+    }
+}
+pub fn is_valid_address(wallet_address: &str) -> Result<(), Json<ErrorResponse>> {
+    if wallet_address.len() != 44 || !wallet_address.starts_with("terra") {
+        Err(Json(ErrorResponse {
+            code: 404,
+            message: "Expecting wallet address 'terra....'".into(),
+        }))
+    } else {
+        Ok(())
     }
 }

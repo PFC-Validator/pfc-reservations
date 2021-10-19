@@ -14,17 +14,22 @@ create table NFT
     background_color char(6)       null,
     animation_url    varchar(2000) null,
     youtube_url      varchar(2000) null,
-    assigned         boolean default false
+    assigned         boolean default false,
+    reserved         boolean default false,
+    assigned_to_wallet_address char(44)  null,
+    reserved_to_wallet_address char(44)  null,
+    signed_packet  json     null,
+    has_submit_error boolean default false,
+    reserved_until timestamp with time zone null,
+    assigned_on timestamp with time zone null
+
 );
 create table NFT_Reservation
 (
     id             uuid primary key DEFAULT gen_random_uuid (),
     wallet_address char(44) not null,
-    signed_packet  json     null,
-    reserved_until timestamp,
     nft_reserved  uuid references NFT (id),
     completed      boolean default false,
     has_error      boolean default false,
     has_expired    boolean default false
-
 )

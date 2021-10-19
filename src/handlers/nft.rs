@@ -2,8 +2,10 @@ use crate::auth::{verify_signature, SignatureB64};
 use crate::requests::NewNFTResponse;
 use crate::NFTDatabase;
 use crate::{requests, ReservationState};
+
+use pfc_reservation::requests::{ErrorResponse, NFTTallyResponse};
 use postgres::Statement;
-use rocket::response::status::Created;
+use rocket::http::Status;
 use rocket::serde::json::Json;
 use rocket::{Route, State};
 use serde_json::Value;
@@ -11,25 +13,78 @@ use uuid::Uuid;
 
 use crate::models::NFT;
 
+/// returns the status of the NFTs
 #[get("/")]
-fn index() -> &'static str {
-    "Hello, world!"
+async fn index(
+    conn: NFTDatabase,
+) -> (
+    Status,
+    Result<Json<Vec<NFTTallyResponse>>, Json<ErrorResponse>>,
+) {
+    match conn
+        .run(move |c| {
+            c.query(
+                "select assigned, reserved, count(*) from nft group by  assigned, reserved",
+                &[],
+            )
+        })
+        .await
+    {
+        Ok(rows) => {
+            let tally: Vec<NFTTallyResponse> = rows
+                .iter()
+                .map(|row| NFTTallyResponse {
+                    assigned: row.get(0),
+                    reserved: row.get(1),
+                    count: row.get(2),
+                })
+                .collect();
+            (Status::new(200), Ok(Json(tally)))
+        }
+        Err(e) => (
+            Status::new(500),
+            Err(Json(ErrorResponse {
+                code: 500,
+                message: format!("DB Error:{})", e),
+            })),
+        ),
+    }
 }
+
 #[get("/<id>")]
-async fn get_by_id(conn: NFTDatabase, id: Uuid) -> Option<Json<NFT>> {
+async fn get_by_id(
+    conn: NFTDatabase,
+    id: Uuid,
+) -> (Status, Result<Json<NFT>, Json<ErrorResponse>>) {
     //    let uuid_id: Uuid = Uuid::from_str(&id).unwrap();
-    let results = conn
+    match conn
         .run(move |c| c.query("Select id,name from NFT where id=$1", &[&id]))
         .await
-        .unwrap();
-    for row in results {
-        let nft = NFT {
-            id: row.get(0),
-            name: row.get(1),
-        };
-        return Some(Json(nft));
+    {
+        Ok(results) => {
+            for row in results {
+                let nft = NFT {
+                    id: row.get(0),
+                    name: row.get(1),
+                };
+                return (Status::new(200), Ok(Json(nft)));
+            }
+            (
+                Status::new(404),
+                Err(Json(ErrorResponse {
+                    code: 404,
+                    message: "Not Found".into(),
+                })),
+            )
+        }
+        Err(e) => (
+            Status::new(500),
+            Err(Json(ErrorResponse {
+                code: 500,
+                message: format!("DB Error:{})", e),
+            })),
+        ),
     }
-    None
 }
 
 #[post("/new", format = "json", data = "<nft_in>")]
@@ -38,32 +93,51 @@ async fn new_nft(
     signature: SignatureB64,
     state: &State<ReservationState>,
     nft_in: Json<requests::NewNFTRequest>,
-) -> Created<Json<requests::NewNFTResponse>> {
-    log::info!("{}", signature.signature);
+) -> (Status, Result<Json<NewNFTResponse>, Json<ErrorResponse>>) {
+    // log::info!("{}", signature.signature);
     let nft_in_stuff = nft_in.into_inner();
     let nft_in_json = serde_json::to_string(&nft_in_stuff).unwrap();
-    verify_signature(&nft_in_json, &signature, &state.verification_key).unwrap();
-    let meta_json: Value = serde_json::from_str(&nft_in_stuff.meta).unwrap();
-    let svg_json: Value = serde_json::from_str(&nft_in_stuff.svg).unwrap();
-    let new_nft: Vec<postgres::Row> = conn
-        .run(move |c| {
-            let stmt: Statement = c
-                .prepare(
-                    "Insert into NFT(id,name,meta_data,svg) values(DEFAULT,$1,$2,$3) returning id",
-                )
-                .unwrap();
-            c.query(&stmt, &[&nft_in_stuff.name, &meta_json, &svg_json])
-        })
-        .await
-        .unwrap();
+    match verify_signature(&nft_in_json, &signature, &state.verification_key) {
+        Ok(()) => {
+            let meta_json: Value = serde_json::from_str(&nft_in_stuff.meta).unwrap();
+            let svg_json: Value = serde_json::from_str(&nft_in_stuff.svg).unwrap();
+            match conn
+                .run(move |c| {
+                    let stmt: Statement = c
+                        .prepare(
+                            "Insert into NFT(id,name,meta_data,svg) values(DEFAULT,$1,$2,$3) returning id",
+                        )
+                        .unwrap();
+                    c.query(&stmt, &[&nft_in_stuff.name, &meta_json, &svg_json])
+                })
+                .await {
+                Ok( new_nft) => {
 
-    let row = new_nft.first();
-    let id_returned: Uuid = row.unwrap().get(0);
-    log::info!("{:?}", id_returned);
-    let response = NewNFTResponse {
-        nft_id: id_returned,
-    };
-    Created::new("/new").body(Json(response))
+                    let row = new_nft.first();
+                    let id_returned: Uuid = row.unwrap().get(0);
+                    log::info!("{:?}", id_returned);
+                    let response = NewNFTResponse {
+                        nft_id: id_returned,
+                    };
+                    (Status::new(201), Ok(Json(response)))
+                },
+                Err(db_err) =>
+                    (Status::new(500),
+                    Err(Json(ErrorResponse {
+                        code: 500,
+                        message: db_err.to_string(),
+                    })))
+
+            }
+        }
+        Err(e) => (
+            Status::new(403),
+            Err(Json(ErrorResponse {
+                code: 403,
+                message: e.to_string(),
+            })),
+        ),
+    }
 }
 
 pub fn get_routes() -> Vec<Route> {
