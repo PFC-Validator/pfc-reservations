@@ -1,10 +1,13 @@
 use chrono::{DateTime, Utc};
+use num_traits::cast::ToPrimitive;
 use pfc_reservation::requests::{ErrorResponse, NewReservationResponse, Reservation};
 use postgres::{Client, Statement};
 use rocket::http::Status;
 use rocket::serde::json::Json;
-use uuid::Uuid;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 
+use uuid::Uuid;
 // examine available NFTs and 'reserve' one
 pub fn get_reservation_count(
     conn: &mut Client,
@@ -82,7 +85,7 @@ pub fn get_reservations_for_wallet(
         )),
     }
 }
-/// do a reservation for a NFT, picking NFT randomly
+/// do a reservation for a NFT, picking NFT in seemingly random order
 pub fn do_reservation(
     mut c: &mut Client,
     wallet_address: &str,
@@ -131,21 +134,39 @@ pub fn get_and_reserve_available_nft(
     reserved_until: &DateTime<Utc>,
 ) -> Result<Uuid, (Status, Json<ErrorResponse>)> {
     let pg_ts: &DateTime<chrono::offset::Utc> = reserved_until;
+    let mut hasher = DefaultHasher::new();
+    wallet_address.hash(&mut hasher);
+    let hash = hasher.finish();
+    let hash_i32: i32 = (((hash % i32::MAX as u64) as i32) - (i32::MAX / 2)) as i32;
+    let hash_f64: f64 = f64::from(hash_i32);
+
+    let seed: f64 = if hash_f64 == 0.0 {
+        -1.0
+    } else {
+        hash_f64 / f64::from(i32::MAX)
+    };
+    log::info!("Seed for {} is {} {}", wallet_address, hash, seed);
+
     let stmt_reserve_nft: Statement = conn
         .prepare(
             r#"
+          
                 update nft set reserved=true, reserved_to_wallet_address=$1 ,reserved_until=$2
                 where id = (
                     select id as available
                     from nft
                     where assigned = false and (reserved=false or reserved_until < now())
+                    and  setseed($3) is not null
                     order by random()
                     limit 1
                 ) returning id "#,
         )
         .unwrap();
 
-    match conn.query(&stmt_reserve_nft, &[&String::from(wallet_address), pg_ts]) {
+    match conn.query(
+        &stmt_reserve_nft,
+        &[&String::from(wallet_address), pg_ts, &seed],
+    ) {
         Ok(reserved_nft) => {
             if let Some(row) = reserved_nft.first() {
                 let id_returned: Uuid = row.get(0);
