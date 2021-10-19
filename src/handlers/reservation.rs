@@ -51,6 +51,15 @@ async fn new_reservation(
             })),
         );
     }
+    if reservation_in_stuff.reserved_until.lt(&Utc::now()) {
+        return (
+            Status::new(401),
+            Err(Json(ErrorResponse {
+                code: 401,
+                message: "reservation time has already expired".to_string(),
+            })),
+        );
+    }
     if let Err(f) = is_valid_address(&reservation_in_stuff.wallet_address.clone()) {
         return (Status::new(401), Err(f));
     }
