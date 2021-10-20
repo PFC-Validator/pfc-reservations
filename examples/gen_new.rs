@@ -22,12 +22,12 @@ fn main() {
             description: None,
             background_color: None,
             animation_url: None,
-            youtube_url: None
+            youtube_url: None,
         };
         let json = serde_json::to_string(&new_nft).unwrap();
         let secp: Secp256k1<All> = Secp256k1::new();
         let signing_key_phrase = env::var("DEBUG_RESERVATION_AUTH")
-            .expect("Environment Variable 'RESERVATION_AUTH' Not present");
+            .expect("Environment Variable 'DEBUG_RESERVATION_AUTH' Not present");
 
         let signing_key = PrivateKey::from_words(&secp, &signing_key_phrase).unwrap();
         let sig = signing_key.sign(&secp, &json).unwrap();

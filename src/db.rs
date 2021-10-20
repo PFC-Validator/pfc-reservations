@@ -1,5 +1,4 @@
 use chrono::{DateTime, Utc};
-use num_traits::cast::ToPrimitive;
 use pfc_reservation::requests::{ErrorResponse, NewReservationResponse, Reservation};
 use postgres::{Client, Statement};
 use rocket::http::Status;
@@ -149,8 +148,7 @@ pub fn get_and_reserve_available_nft(
 
     let stmt_reserve_nft: Statement = conn
         .prepare(
-            r#"
-          
+            r#"        
                 update nft set reserved=true, reserved_to_wallet_address=$1 ,reserved_until=$2
                 where id = (
                     select id as available

@@ -108,7 +108,7 @@ async fn new_nft(
                             r#"Insert into NFT( id,name,meta_data,svg,ipfs_image,
                                                 ipfs_meta, image_data, external_url,
                                                 description,background_color,
-                                                animation_url,youtube_url       
+                                                animation_url,youtube_url  )     
                             values(DEFAULT,$1,$2,$3,$4, $5,$6,$7, $8,$9, $10,$11) returning id"#,
                         )
                         .unwrap();

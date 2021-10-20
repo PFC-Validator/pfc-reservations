@@ -1316,7 +1316,6 @@ dependencies = [
  "dotenv",
  "env_logger",
  "log",
- "num-traits",
  "postgres",
  "rocket",
  "rocket_sync_db_pools",
