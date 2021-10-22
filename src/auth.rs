@@ -5,6 +5,7 @@ use rocket::serde::json::Json;
 use rocket::Request;
 use secp256k1::{All, Message, PublicKey, Secp256k1, Signature};
 use sha2::{Digest, Sha256};
+use std::env;
 use thread_local::ThreadLocal;
 
 #[derive(Debug, Clone)]
@@ -48,6 +49,14 @@ impl<'r> FromRequest<'r> for SignatureB64 {
     type Error = SignatureError;
 
     async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
+        if let Ok(debug) = env::var("DEBUG_IGNORE_SIG") {
+            if debug == "true" {
+                log::warn!("IGNORING SIGNATURES");
+                return Outcome::Success(SignatureB64 {
+                    signature: String::from("DEBUG IGNORE SIG TURNED ON"),
+                });
+            }
+        }
         if let Some(sig) = request.headers().get_one("X-Reservation-Signature") {
             Outcome::Success(SignatureB64 {
                 signature: String::from(sig),

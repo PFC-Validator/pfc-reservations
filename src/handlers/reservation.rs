@@ -32,14 +32,29 @@ async fn new_reservation(
 ) {
     let reservation_in_stuff = reservation_in.into_inner();
     let reservation_in_json = serde_json::to_string(&reservation_in_stuff).unwrap();
+
     if let Err(e) = verify_signature(&reservation_in_json, &signature, &state.verification_key) {
-        return (
-            Status::new(403),
-            Err(Json(ErrorResponse {
-                code: 403,
-                message: e.to_string(),
-            })),
-        );
+        if let Ok(debug) = std::env::var("DEBUG_IGNORE_SIG") {
+            if debug == "true" {
+                log::warn!("IGNORING SIGNATURES");
+            } else {
+                return (
+                    Status::new(403),
+                    Err(Json(ErrorResponse {
+                        code: 403,
+                        message: e.to_string(),
+                    })),
+                );
+            }
+        } else {
+            return (
+                Status::new(403),
+                Err(Json(ErrorResponse {
+                    code: 403,
+                    message: e.to_string(),
+                })),
+            );
+        }
     }
     let duration_max = Utc::now() + state.max_reservation_duration;
     if reservation_in_stuff.reserved_until.gt(&duration_max) {
@@ -63,6 +78,7 @@ async fn new_reservation(
     if let Err(f) = is_valid_address(&reservation_in_stuff.wallet_address.clone()) {
         return (Status::new(401), Err(f));
     }
+
     let max_reservations = state.max_reservations;
     let x = conn
         .run(move |c| {

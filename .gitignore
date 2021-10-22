@@ -2,3 +2,4 @@
 /.idea
 /.env
 /*.iml
+/migrations/up.data.sql

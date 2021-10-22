@@ -9,3 +9,4 @@ once reserved, we either returned a signed version of the meta-data which can be
 - allow the end user to sign the overall transaction, with the service submitting the transaction via their own private LCD
 - check for payment by some other means and issue the mint transaction by the NFT contract owner (the traditional method)
 
+*NOTE* currently not deterministically pseudo-random.

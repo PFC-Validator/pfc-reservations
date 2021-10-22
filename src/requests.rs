@@ -27,6 +27,20 @@ pub struct NFTTallyResponse {
     pub reserved: bool,
     pub count: i64,
 }
+#[derive(Serialize)]
+pub struct NFTTallyStat {
+    pub assigned: i64,
+    pub reserved: i64,
+    pub count: i64,
+}
+#[derive(Serialize)]
+pub struct NFTStageTallyStat {
+    pub stage_id: Uuid,
+    pub stage_code: String,
+    pub stage_name: String,
+    pub wallet_count: i64,
+    pub stats: NFTTallyStat,
+}
 
 #[derive(Serialize)]
 pub struct Reservation {
@@ -38,12 +52,18 @@ pub struct Reservation {
     pub assigned_on: Option<DateTime<Utc>>,
     pub has_submit_error: bool,
 }
+
+/// request a NFT to be reserved
 #[derive(Serialize, Deserialize, Clone)]
 pub struct NewReservationRequest {
+    /// wallet requesting reservation
     pub wallet_address: String,
+    /// how long to hold the reservation
     pub reserved_until: DateTime<Utc>,
-    pub signed_tx: Option<String>,
+    /// optionally,
+    pub stage: Option<String>,
 }
+
 #[derive(Serialize, Deserialize)]
 pub struct NewReservationResponse {
     pub nft_id: Uuid,

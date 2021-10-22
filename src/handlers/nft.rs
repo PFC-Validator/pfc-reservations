@@ -3,7 +3,8 @@ use crate::requests::NewNFTResponse;
 use crate::NFTDatabase;
 use crate::{requests, ReservationState};
 
-use pfc_reservation::requests::{ErrorResponse, NFTTallyResponse};
+use crate::db::{get_nft_stat, get_stages};
+use pfc_reservation::requests::{ErrorResponse, NFTStageTallyStat, NFTTallyResponse, NFTTallyStat};
 use postgres::Statement;
 use rocket::http::Status;
 use rocket::serde::json::Json;
@@ -51,6 +52,42 @@ async fn index(
     }
 }
 
+#[get("/stages")]
+async fn get_stage_stats(
+    conn: NFTDatabase,
+) -> (
+    Status,
+    Result<Json<Vec<NFTStageTallyStat>>, Json<ErrorResponse>>,
+) {
+    conn.run(move |mut c| match get_stages(&mut c) {
+        Ok(stages) => {
+            let stats = stages.iter().map(|s| {
+                let st = match get_nft_stat(c, &s.attribute_type, &s.attribute_value) {
+                    Ok(t) => t,
+                    Err(e) => {
+                        log::error!("Get State Stats: {}", e.1.message);
+                        NFTTallyStat {
+                            assigned: -1,
+                            reserved: -1,
+                            count: -1,
+                        }
+                    }
+                };
+
+                NFTStageTallyStat {
+                    stage_id: s.id,
+                    stage_code: s.code.clone(),
+                    stage_name: s.name.clone(),
+                    wallet_count: -1,
+                    stats: st,
+                }
+            });
+            (Status::new(200), Ok(Json(stats.collect::<Vec<_>>())))
+        }
+        Err(e) => (e.0, Err(e.1)),
+    })
+    .await
+}
 #[get("/<id>")]
 async fn get_by_id(
     conn: NFTDatabase,
@@ -58,14 +95,19 @@ async fn get_by_id(
 ) -> (Status, Result<Json<NFT>, Json<ErrorResponse>>) {
     //    let uuid_id: Uuid = Uuid::from_str(&id).unwrap();
     match conn
-        .run(move |c| c.query("Select id,name from NFT where id=$1", &[&id]))
+        .run(move |c| c.query("Select id, name, assigned, reserved, has_submit_error,reserved_until from NFT where id=$1", &[&id]))
         .await
     {
         Ok(results) => {
             for row in results {
+                // Q if assigned, add image/attributes link?
                 let nft = NFT {
                     id: row.get(0),
                     name: row.get(1),
+                    assigned: row.get(2),
+                    reserved: row.get(3),
+                    has_submit_error: row.get(4),
+                    reserved_until: row.get(5)
                 };
                 return (Status::new(200), Ok(Json(nft)));
             }
@@ -160,5 +202,5 @@ async fn new_nft(
 }
 
 pub fn get_routes() -> Vec<Route> {
-    routes![index, get_by_id, new_nft]
+    routes![index, get_by_id, new_nft, get_stage_stats]
 }
