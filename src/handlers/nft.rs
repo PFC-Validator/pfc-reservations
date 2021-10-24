@@ -99,7 +99,7 @@ async fn get_by_id(
         .await
     {
         Ok(results) => {
-            for row in results {
+            if let Some( row) = results.first() {
                 // Q if assigned, add image/attributes link?
                 let nft = NFT {
                     id: row.get(0),
@@ -111,15 +111,16 @@ async fn get_by_id(
                     in_process: row.get(6),
                     txhash :Some(String::from("-Not-Shown-")),
                 };
-                return (Status::new(200), Ok(Json(nft)));
+                 (Status::new(200), Ok(Json(nft)))
+            } else {
+                (
+                    Status::new(404),
+                    Err(Json(ErrorResponse {
+                        code: 404,
+                        message: "Not Found".into(),
+                    })),
+                )
             }
-            (
-                Status::new(404),
-                Err(Json(ErrorResponse {
-                    code: 404,
-                    message: "Not Found".into(),
-                })),
-            )
         }
         Err(e) => (
             Status::new(500),

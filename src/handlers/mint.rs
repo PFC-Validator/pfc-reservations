@@ -103,11 +103,7 @@ async fn get_signed_metadata(
                 if reserved_to.eq(&wallet) {
                     let result = validate_reservation(&nft_full.nft_lite);
                     match result.1 {
-                        Ok(_) => {
-                            let r = build_metadata_response(&reserved_to, &signing_key, &nft_full);
-
-                            r
-                        }
+                        Ok(_) => build_metadata_response(reserved_to, signing_key, &nft_full),
                         Err(e) => (result.0, Err(e)),
                     }
                 } else {

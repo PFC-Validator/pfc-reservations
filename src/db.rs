@@ -214,15 +214,24 @@ pub fn get_and_reserve_available_nft(
 
                     match query {
                         Ok(row) => {
-                            let r = increase_stage_reservation(conn, stage.id, wallet_address);
-                            if let Err(db_err) = r {
-                                log::error!(
-                                    "Wallet Whitelist has error {}. We still reserved",
-                                    db_err.to_string()
+                            let update_count: i32 = row.get(0);
+                            if update_count == 1 {
+                                let r = increase_stage_reservation(conn, stage.id, wallet_address);
+                                if let Err(db_err) = r {
+                                    log::error!(
+                                        "Wallet Whitelist has error {}. We still reserved",
+                                        db_err.to_string()
+                                    )
+                                }
+                                let id_returned: Uuid = row.get(0);
+                                return Ok(id_returned);
+                            } else {
+                                log::info!(
+                                    "Stage {}-{} full.. off to next one",
+                                    stage.code,
+                                    stage.name
                                 )
                             }
-                            let id_returned: Uuid = row.get(0);
-                            return Ok(id_returned);
                         }
                         Err(db_err) => {
                             return Err((

@@ -29,13 +29,18 @@ impl SignatureLocalStorage {
         }
     }
 }
+impl Default for SignatureLocalStorage {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 pub fn verify_signature(
     verify_string: &str,
     sig: &SignatureB64,
     public_key: &str,
 ) -> anyhow::Result<()> {
     let secp_tls = SignatureLocalStorage::new();
-    let secp = secp_tls.secp.get_or(|| Secp256k1::new());
+    let secp = secp_tls.secp.get_or(Secp256k1::new);
     let hash = Sha256::digest(verify_string.as_bytes());
     let hash_message: Message = Message::from_slice(&hash)?;
     let sig_bytes = base64::decode(&sig.signature)?;
@@ -83,7 +88,7 @@ pub fn generate_signature(
     message: &str,
 ) -> Result<SignatureB64, Json<ErrorResponse>> {
     let secp_tls = SignatureLocalStorage::new();
-    let secp = secp_tls.secp.get_or(|| Secp256k1::new());
+    let secp = secp_tls.secp.get_or(Secp256k1::new);
     match private_key.sign(secp, message) {
         Ok(sig) => Ok(SignatureB64 {
             signature: sig.signature,
