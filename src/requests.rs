@@ -74,3 +74,49 @@ pub struct ErrorResponse {
     pub code: u16,
     pub message: String,
 }
+
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug, Default)]
+pub struct Trait {
+    pub display_type: Option<String>,
+    pub trait_type: String,
+    pub value: String,
+}
+#[derive(Serialize, Deserialize, Debug, Default)]
+pub struct Metadata {
+    pub token_uri: String,
+    pub image: Option<String>,
+    pub image_data: Option<String>,
+    pub external_url: Option<String>,
+    pub description: Option<String>,
+    pub name: Option<String>,
+    pub attributes: Option<Vec<Trait>>,
+    pub background_color: Option<String>,
+    pub animation_url: Option<String>,
+    pub youtube_url: Option<String>,
+}
+#[derive(Serialize, Deserialize, Debug, Default)]
+pub struct MetadataResponse {
+    pub attributes: String,
+    pub signature: String,
+}
+
+/// submit TX hash of NFT assignment.
+#[derive(Serialize, Deserialize, Clone)]
+pub struct AssignHashRequest {
+    /// wallet requesting reservation
+    pub wallet_address: String,
+    /// NFT id
+    pub nft_id: Uuid,
+    /// the hash for the request
+    pub tx_hash: String,
+}
+/// submit signed request to perform NFT assignment
+#[derive(Serialize, Deserialize, Clone)]
+pub struct AssignSignedTxRequest {
+    /// wallet requesting reservation
+    pub wallet_address: String,
+    /// NFT id
+    pub nft_id: Uuid,
+    /// the hash for the request
+    pub signed_tx: String,
+}

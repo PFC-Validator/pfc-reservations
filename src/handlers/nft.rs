@@ -95,7 +95,7 @@ async fn get_by_id(
 ) -> (Status, Result<Json<NFT>, Json<ErrorResponse>>) {
     //    let uuid_id: Uuid = Uuid::from_str(&id).unwrap();
     match conn
-        .run(move |c| c.query("Select id, name, assigned, reserved, has_submit_error,reserved_until from NFT where id=$1", &[&id]))
+        .run(move |c| c.query("Select id, name, assigned, reserved, has_submit_error,reserved_until, in_process from NFT where id=$1", &[&id]))
         .await
     {
         Ok(results) => {
@@ -107,7 +107,9 @@ async fn get_by_id(
                     assigned: row.get(2),
                     reserved: row.get(3),
                     has_submit_error: row.get(4),
-                    reserved_until: row.get(5)
+                    reserved_until: row.get(5),
+                    in_process: row.get(6),
+                    txhash :Some(String::from("-Not-Shown-")),
                 };
                 return (Status::new(200), Ok(Json(nft)));
             }

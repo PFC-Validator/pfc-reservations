@@ -6,7 +6,7 @@ use rocket::serde::json::Json;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
-use crate::models::{Stage, WalletStageAllocation};
+use crate::models::{NftFull, Stage, NFT};
 use uuid::Uuid;
 
 // examine available NFTs and 'reserve' one
@@ -172,9 +172,11 @@ pub fn get_and_reserve_available_nft(
                                 where id = (
                                     select id as available
                                     from nft n, json_array_elements(n.meta_data -> 'attributes' ) att
-                                    where assigned = false and (reserved=false or reserved_until < now())
+                                    where assigned = false 
+                                     and (reserved=false or reserved_until < now())
                                      and  att ->> 'trait_type' = $3 and att ->> 'value' = $4
                                      and has_submit_error=false
+                                     and in_process=false
                                     order by random()
                                     limit 1
                                 ) returning id "#;
@@ -199,8 +201,10 @@ pub fn get_and_reserve_available_nft(
                             where id = (
                                 select id as available
                                 from nft
-                                where assigned = false and (reserved=false or reserved_until < now())                   
+                                where assigned = false 
+                                and (reserved=false or reserved_until < now())                   
                                 and has_submit_error=false
+                                and in_process=false
                                 order by random()
                                 limit 1
                             ) returning id "#;
@@ -454,6 +458,7 @@ order by sort_pref
         )),
     }
 }
+/// update wallet reservation count
 pub fn increase_stage_reservation(
     conn: &mut Client,
     stage_id: Uuid,
@@ -462,5 +467,59 @@ pub fn increase_stage_reservation(
     conn.execute(
         "update wallet_whitelist set reserved_count =reserved_count+ 1 where wallet_address=$1 and stage = $2",
         &[&String::from(wallet_address), &stage_id],
+    )
+}
+/// retried NFT from database
+pub fn get_nft(conn: &mut Client, nft: &Uuid) -> Result<NftFull, Error> {
+    conn.query_one(
+        r#"
+            Select  id,name, assigned, reserved, has_submit_error, reserved_until, 
+                    meta_data, svg, ipfs_image, ipfs_meta, image_data, external_url, description, background_color, 
+                    animation_url, youtube_url, assigned_on, assigned_to_wallet_address, reserved_to_wallet_address,signed_packet ,in_procress,txhash
+                    from NFT where id = $1"#,
+        &[nft],
+    )
+    .map(|r| {
+        let n = NFT{
+            id: r.get(0),
+            name: r.get(1),
+            assigned: r.get(2),
+            reserved: r.get(3),
+            has_submit_error: r.get(4),
+            reserved_until: r.get(5),
+            in_process:r.get(20),
+            txhash:r.get(21)
+        };
+        NftFull {
+            nft_lite: n,
+            meta_data: r.get(6),
+            svg: r.get(7),
+            ipfs_image: r.get(8),
+            ipfs_meta: r.get(9),
+            image_data:r.get(10),
+            external_url: r.get(11),
+            description: r.get(12),
+            background_color: r.get(13),
+            animation_url: r.get(14),
+            youtube_url: r.get(15),
+            assigned_on: r.get(16),
+            assigned_to_wallet_address: r.get(17),
+            reserved_to_wallet_address: r.get(18),
+            signed_packet: r.get(19)
+        }})
+}
+
+/// set TXHash for NFT purchase, and set NFT 'in_progress'
+pub fn set_tx_hash_for_nft(conn: &mut Client, nft: &Uuid, txhash: &str) -> Result<u64, Error> {
+    conn.execute(
+        "update NFT set txhash = $1, in_process = true where id = $2",
+        &[&String::from(txhash), &nft],
+    )
+}
+/// set TX for NFT purchase, and set NFT 'in_progress'
+pub fn set_tx_for_nft(conn: &mut Client, nft: &Uuid, tx: &str) -> Result<u64, Error> {
+    conn.execute(
+        "update NFT set signed_packet = $1, in_process = true where id = $2",
+        &[&String::from(tx), &nft],
     )
 }

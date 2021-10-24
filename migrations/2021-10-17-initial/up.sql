@@ -21,7 +21,9 @@ create table NFT
     signed_packet              json                     null,
     has_submit_error           boolean          default false,
     reserved_until             timestamp with time zone null,
-    assigned_on                timestamp with time zone null
+    assigned_on                timestamp with time zone null,
+    in_process boolean default false,
+    txhash char(64) default null
 
 );
 create table NFT_Reservation

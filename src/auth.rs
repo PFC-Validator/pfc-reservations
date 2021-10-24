@@ -6,6 +6,7 @@ use rocket::Request;
 use secp256k1::{All, Message, PublicKey, Secp256k1, Signature};
 use sha2::{Digest, Sha256};
 use std::env;
+use terra_rust_api::PrivateKey;
 use thread_local::ThreadLocal;
 
 #[derive(Debug, Clone)]
@@ -74,5 +75,22 @@ pub fn is_valid_address(wallet_address: &str) -> Result<(), Json<ErrorResponse>>
         }))
     } else {
         Ok(())
+    }
+}
+
+pub fn generate_signature(
+    private_key: &PrivateKey,
+    message: &str,
+) -> Result<SignatureB64, Json<ErrorResponse>> {
+    let secp_tls = SignatureLocalStorage::new();
+    let secp = secp_tls.secp.get_or(|| Secp256k1::new());
+    match private_key.sign(secp, message) {
+        Ok(sig) => Ok(SignatureB64 {
+            signature: sig.signature,
+        }),
+        Err(e) => Err(Json(ErrorResponse {
+            code: 500,
+            message: e.to_string(),
+        })),
     }
 }

@@ -34,18 +34,8 @@ async fn new_reservation(
     let reservation_in_json = serde_json::to_string(&reservation_in_stuff).unwrap();
 
     if let Err(e) = verify_signature(&reservation_in_json, &signature, &state.verification_key) {
-        if let Ok(debug) = std::env::var("DEBUG_IGNORE_SIG") {
-            if debug == "true" {
-                log::warn!("IGNORING SIGNATURES");
-            } else {
-                return (
-                    Status::new(403),
-                    Err(Json(ErrorResponse {
-                        code: 403,
-                        message: e.to_string(),
-                    })),
-                );
-            }
+        if state.debug_mode {
+            log::warn!("IGNORING SIGNATURES");
         } else {
             return (
                 Status::new(403),
