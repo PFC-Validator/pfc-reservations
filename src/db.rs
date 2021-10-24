@@ -50,7 +50,7 @@ pub fn get_reservations_for_wallet(
 ) -> (Status, Result<Json<Vec<Reservation>>, Json<ErrorResponse>>) {
     match conn.query(
         r#"
-        Select  reserved_to_wallet_address, id, reserved_until, reserved,  assigned,  assigned_on, has_submit_error
+        Select  reserved_to_wallet_address, id, reserved_until, reserved,  assigned,  assigned_on, has_submit_error, in_process
         from NFT
         where (reserved_to_wallet_address=$1 and reserved=true and reserved_until > now()) or assigned_to_wallet_address=$2"#,
         &[&String::from(wallet_address),&String::from(wallet_address)],
@@ -71,7 +71,8 @@ pub fn get_reservations_for_wallet(
                 reserved_until,
                 assigned: r.get(4),
                 assigned_on: r.get(5),
-                has_submit_error: r.get(6)
+                has_submit_error: r.get(6),
+                    in_process:r.get(7)
             }}).collect::<Vec<Reservation>>();
 
                 (Status::new(200), Ok(Json(reservations)))

@@ -52,6 +52,7 @@ pub struct Reservation {
     pub assigned: bool,
     pub assigned_on: Option<DateTime<Utc>>,
     pub has_submit_error: bool,
+    pub in_process: bool,
 }
 
 /// request a NFT to be reserved
