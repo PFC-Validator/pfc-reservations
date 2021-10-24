@@ -45,6 +45,7 @@ create table stage_whitelist
     attribute_value varchar(100) null,
     is_default      bool                     default false,
     stage_open      timestamp with time zone default now(),
+    stage_close     timestamp with time zone null default null,
     stage_free      bool                     default false
 );
 

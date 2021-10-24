@@ -1,5 +1,6 @@
 use crate::auth::{is_valid_address, verify_signature, SignatureB64};
 use crate::db::{do_reservation, get_reservations_for_wallet};
+use crate::handlers::mint::build_metadata_response;
 use crate::{NFTDatabase, ReservationState};
 use chrono::Utc;
 use pfc_reservation::requests::{
@@ -8,6 +9,8 @@ use pfc_reservation::requests::{
 use rocket::http::Status;
 use rocket::serde::json::Json;
 use rocket::{Route, State};
+
+use uuid::Uuid;
 
 #[get("/<address>")]
 async fn get_by_address(
@@ -70,17 +73,43 @@ async fn new_reservation(
     }
 
     let max_reservations = state.max_reservations;
-    let x = conn
+    let wallet_address = reservation_in_stuff.wallet_address.clone();
+    let reserved_until = reservation_in_stuff.reserved_until;
+    let result: (
+        Status,
+        Result<(Uuid, serde_json::Value), Json<ErrorResponse>>,
+    ) = conn
         .run(move |c| {
             do_reservation(
                 c,
-                &reservation_in_stuff.wallet_address,
-                &reservation_in_stuff.reserved_until,
+                &wallet_address,
+                &reserved_until.clone(),
                 max_reservations,
             )
         })
         .await;
-    x
+    match result.1 {
+        Ok((uuid, meta_data)) => {
+            let signing_key = &state.signing_key;
+            let att = build_metadata_response(
+                &reservation_in_stuff.wallet_address,
+                signing_key,
+                &meta_data,
+            );
+
+            match att.1 {
+                Ok(y) => (
+                    att.0,
+                    Ok(Json(NewReservationResponse {
+                        nft_id: uuid,
+                        metadata_response: y,
+                    })),
+                ),
+                Err(e) => (att.0, Err(e)),
+            }
+        }
+        Err(e) => (result.0, Err(e)),
+    }
 }
 
 pub fn get_routes() -> Vec<Route> {

@@ -23,9 +23,10 @@ pub struct NewNFTResponse {
 
 #[derive(Serialize)]
 pub struct NFTTallyResponse {
-    pub assigned: bool,
-    pub reserved: bool,
-    pub count: i64,
+    pub assigned: i64,
+    pub reserved: i64,
+    pub in_process: i64,
+    pub available: i64,
 }
 #[derive(Serialize)]
 pub struct NFTTallyStat {
@@ -67,6 +68,7 @@ pub struct NewReservationRequest {
 #[derive(Serialize, Deserialize)]
 pub struct NewReservationResponse {
     pub nft_id: Uuid,
+    pub metadata_response: MetadataResponse,
 }
 
 #[derive(Serialize)]

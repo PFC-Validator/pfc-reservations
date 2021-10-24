@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use pfc_reservation::requests::{ErrorResponse, NFTTallyStat, NewReservationResponse, Reservation};
+use pfc_reservation::requests::{ErrorResponse, NFTTallyStat, Reservation};
 use postgres::{Client, Error, Statement};
 use rocket::http::Status;
 use rocket::serde::json::Json;
@@ -94,7 +94,7 @@ pub fn do_reservation(
     max_reservations: usize,
 ) -> (
     Status,
-    Result<Json<NewReservationResponse>, Json<ErrorResponse>>,
+    Result<(Uuid, serde_json::Value), Json<ErrorResponse>>,
 ) {
     let res_count_r = get_reservation_count(c, wallet_address);
     match res_count_r {
@@ -111,10 +111,11 @@ pub fn do_reservation(
                 let nft_id_r =
                     get_and_reserve_available_nft(&mut c, wallet_address, reserved_until);
                 match nft_id_r {
-                    Ok(nft_id) => (
-                        Status::new(201),
-                        Ok(Json(NewReservationResponse { nft_id })),
-                    ),
+                    Ok(nft_reservation) => {
+                        let nft_id = nft_reservation.0;
+                        let meta = nft_reservation.1;
+                        (Status::new(201), Ok((nft_id, meta)))
+                    }
 
                     Err(e) => (e.0, Err(e.1)),
                 }
@@ -133,7 +134,7 @@ pub fn get_and_reserve_available_nft(
     conn: &mut Client,
     wallet_address: &str,
     reserved_until: &DateTime<Utc>,
-) -> Result<Uuid, (Status, Json<ErrorResponse>)> {
+) -> Result<(Uuid, serde_json::Value), (Status, Json<ErrorResponse>)> {
     let pg_ts: &DateTime<chrono::offset::Utc> = reserved_until;
     let mut hasher = DefaultHasher::new();
     wallet_address.hash(&mut hasher);
@@ -179,9 +180,9 @@ pub fn get_and_reserve_available_nft(
                                      and in_process=false
                                     order by random()
                                     limit 1
-                                ) returning id "#;
+                                ) returning id,meta_data "#;
                             let stmt_reserve_nft: Statement = conn.prepare(select_stmt).unwrap();
-                            conn.query_one(
+                            conn.query(
                                 &stmt_reserve_nft,
                                 &[&String::from(wallet_address), pg_ts, &att_type, &att_value],
                             )
@@ -207,15 +208,14 @@ pub fn get_and_reserve_available_nft(
                                 and in_process=false
                                 order by random()
                                 limit 1
-                            ) returning id "#;
+                            ) returning id,meta_data "#;
                         let stmt_reserve_nft: Statement = conn.prepare(select_stmt).unwrap();
-                        conn.query_one(&stmt_reserve_nft, &[&String::from(wallet_address), pg_ts])
+                        conn.query(&stmt_reserve_nft, &[&String::from(wallet_address), pg_ts])
                     };
 
                     match query {
-                        Ok(row) => {
-                            let update_count: i32 = row.get(0);
-                            if update_count == 1 {
+                        Ok(rows) => {
+                            if let Some(row) = rows.first() {
                                 let r = increase_stage_reservation(conn, stage.id, wallet_address);
                                 if let Err(db_err) = r {
                                     log::error!(
@@ -224,7 +224,8 @@ pub fn get_and_reserve_available_nft(
                                     )
                                 }
                                 let id_returned: Uuid = row.get(0);
-                                return Ok(id_returned);
+                                let meta_data: serde_json::Value = row.get(1);
+                                return Ok((id_returned, meta_data));
                             } else {
                                 log::info!(
                                     "Stage {}-{} full.. off to next one",
@@ -484,7 +485,7 @@ pub fn get_nft(conn: &mut Client, nft: &Uuid) -> Result<NftFull, Error> {
         r#"
             Select  id,name, assigned, reserved, has_submit_error, reserved_until, 
                     meta_data, svg, ipfs_image, ipfs_meta, image_data, external_url, description, background_color, 
-                    animation_url, youtube_url, assigned_on, assigned_to_wallet_address, reserved_to_wallet_address,signed_packet ,in_procress,txhash
+                    animation_url, youtube_url, assigned_on, assigned_to_wallet_address, reserved_to_wallet_address,signed_packet ,in_process,txhash
                     from NFT where id = $1"#,
         &[nft],
     )

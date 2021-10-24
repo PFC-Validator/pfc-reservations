@@ -2,6 +2,7 @@ use crate::auth::{verify_signature, SignatureB64};
 use crate::requests::NewNFTResponse;
 use crate::NFTDatabase;
 use crate::{requests, ReservationState};
+use chrono::{DateTime, Utc};
 
 use crate::db::{get_nft_stat, get_stages};
 use pfc_reservation::requests::{ErrorResponse, NFTStageTallyStat, NFTTallyResponse, NFTTallyStat};
@@ -16,30 +17,29 @@ use crate::models::NFT;
 
 /// returns the status of the NFTs
 #[get("/")]
-async fn index(
-    conn: NFTDatabase,
-) -> (
-    Status,
-    Result<Json<Vec<NFTTallyResponse>>, Json<ErrorResponse>>,
-) {
+async fn index(conn: NFTDatabase) -> (Status, Result<Json<NFTTallyResponse>, Json<ErrorResponse>>) {
     match conn
         .run(move |c| {
-            c.query(
-                "select assigned, reserved, count(*) from nft group by  assigned, reserved",
+            c.query_one(
+               r#"
+               select  sum(case assigned when true then 1 else 0 end) as assigned,
+                       sum(case reserved and reserved_until > now() and not assigned and not in_process when true then 1 else 0 end) as reserved,
+                       sum(case in_process when true then 1 else 0 end ) as in_process,
+                       sum(case not assigned and not in_process and (not reserved or reserved_until <= now()) when true then 1 else 0 end) as available
+               from nft"#,
                 &[],
             )
         })
         .await
     {
-        Ok(rows) => {
-            let tally: Vec<NFTTallyResponse> = rows
-                .iter()
-                .map(|row| NFTTallyResponse {
-                    assigned: row.get(0),
-                    reserved: row.get(1),
-                    count: row.get(2),
-                })
-                .collect();
+        Ok(row) => {
+            let tally =NFTTallyResponse {
+                assigned: row.get(0),
+                reserved: row.get(1),
+                in_process: row.get(2),
+                available: row.get(3)
+            };
+
             (Status::new(200), Ok(Json(tally)))
         }
         Err(e) => (
@@ -99,29 +99,70 @@ async fn get_by_id(
         .await
     {
         Ok(results) => {
-            if let Some( row) = results.first() {
-                // Q if assigned, add image/attributes link?
-                let nft = NFT {
-                    id: row.get(0),
-                    name: row.get(1),
-                    assigned: row.get(2),
-                    reserved: row.get(3),
-                    has_submit_error: row.get(4),
-                    reserved_until: row.get(5),
-                    in_process: row.get(6),
-                    txhash :Some(String::from("-Not-Shown-")),
-                };
-                 (Status::new(200), Ok(Json(nft)))
+            if let Some(row) = results.first() {
+                let now: DateTime<chrono::offset::Utc> = Utc::now();
+                let assigned:bool = row.get(2);
+                let in_process:bool = row.get(6);
+                if  assigned || in_process {
+                     (Status::new(200), Ok(Json(NFT {
+                        id: row.get(0),
+                        name: row.get(1),
+                        assigned: row.get(2),
+                        reserved: row.get(3),
+                        has_submit_error: row.get(4),
+                        reserved_until: row.get(5),
+                        in_process: row.get(6),
+                        txhash: Some(String::from("-hidden-"))
+                    })))
+                } else {
+                    let reserved_date_o: Option<DateTime<chrono::offset::Utc>> = row.get(5);
+                    if let Some(reserved_date) = reserved_date_o {
+                        if now < reserved_date {
+                         //   log::info!("In Reservation {} {}",now, reserved_date);
+                            (Status::new(200), Ok(Json(NFT {
+                                id: row.get(0),
+                                name: row.get(1),
+                                assigned: row.get(2),
+                                reserved: true,
+                                has_submit_error: row.get(4),
+                                reserved_until: Some(reserved_date),
+                                in_process: row.get(6),
+                                txhash: None
+                            })))
+                        } else {
+                            log::info!("Past Reservation {} {}",now, reserved_date);
+                            (Status::new(200), Ok(Json(NFT {
+                                id: row.get(0),
+                                name: row.get(1),
+                                assigned: row.get(2),
+                                reserved: false,
+                                has_submit_error: row.get(4),
+                                reserved_until: None,
+                                in_process: row.get(6),
+                                txhash: None
+                            })))
+                        }
+                    } else {
+                         (Status::new(200), Ok(Json(NFT {
+                            id: row.get(0),
+                            name: row.get(1),
+                            assigned: row.get(2),
+                            reserved: false,
+                            has_submit_error: row.get(4),
+                            reserved_until: None,
+                            in_process: row.get(6),
+                            txhash: Some(String::from("-hidden-"))
+                        })))
+                    }
+                }
             } else {
-                (
-                    Status::new(404),
-                    Err(Json(ErrorResponse {
-                        code: 404,
-                        message: "Not Found".into(),
-                    })),
-                )
+                 (Status::new(404), Err(Json(ErrorResponse {
+                    code: 404,
+                    message: String::from("NFT not found"),
+                })))
             }
         }
+
         Err(e) => (
             Status::new(500),
             Err(Json(ErrorResponse {

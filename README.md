@@ -10,3 +10,6 @@ once reserved, we either returned a signed version of the meta-data which can be
 - check for payment by some other means and issue the mint transaction by the NFT contract owner (the traditional method)
 
 *NOTE* currently not deterministically pseudo-random.
+
+#todo
+- stage-close .
