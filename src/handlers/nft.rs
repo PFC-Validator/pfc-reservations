@@ -4,13 +4,16 @@ use crate::NFTDatabase;
 use crate::{requests, ReservationState};
 use chrono::{DateTime, Utc};
 
-use crate::db::{get_nft_stat, get_stages};
-use pfc_reservation::requests::{ErrorResponse, NFTStageTallyStat, NFTTallyResponse, NFTTallyStat};
+use crate::db::{get_nft_stat, get_stages, is_name_available};
+use pfc_reservation::requests::{
+    ErrorResponse, NFTStageTallyStat, NFTTallyResponse, NFTTallyStat, NameNFTResponse,
+};
 use postgres::Statement;
 use rocket::http::Status;
 use rocket::serde::json::Json;
 use rocket::{Route, State};
 use serde_json::Value;
+use terra_rust_api::Terra;
 use uuid::Uuid;
 
 use crate::models::NFT;
@@ -244,7 +247,71 @@ async fn new_nft(
         ),
     }
 }
-
+#[get("/check-name/<name>")]
+async fn check_name(
+    conn: NFTDatabase,
+    name: String,
+    state: &State<ReservationState>,
+) -> (Status, Result<Json<NameNFTResponse>, Json<ErrorResponse>>) {
+    let lcd = state.lcd.clone();
+    let chain = state.chain.clone();
+    let nft_contract = state.nft_contract.clone();
+    let name_copy = name.clone();
+    match conn.run(move |c| is_name_available(c, &name_copy)).await {
+        Ok(x) => {
+            if x {
+                match Terra::lcd_client_no_tx(&lcd, &chain).await {
+                    Err(e) => (
+                        Status::new(500),
+                        Err(Json(ErrorResponse {
+                            code: 500,
+                            message: e.to_string(),
+                        })),
+                    ),
+                    Ok(terra) => {
+                        let qry = format!("{{\"nft_info\":{{\"token_id\":\"{}\"}}}}", name.clone());
+                        //       log::info!("Qry={}", qry);
+                        match terra.wasm().query::<Value>(&nft_contract, &qry).await {
+                            Ok(_) => (
+                                Status::new(200),
+                                Ok(Json(NameNFTResponse {
+                                    allowed: false,
+                                    message: Some(format!("{} already is a peep", name)),
+                                })),
+                            ),
+                            Err(_e) => {
+                                //    log::info!("{:?}", e);
+                                (
+                                    Status::new(200),
+                                    Ok(Json(NameNFTResponse {
+                                        allowed: true,
+                                        message: None,
+                                    })),
+                                )
+                            }
+                        }
+                    }
+                }
+            } else {
+                (
+                    Status::new(200),
+                    Ok(Json(NameNFTResponse {
+                        allowed: false,
+                        message: Some(String::from("Name is taken")),
+                    })),
+                )
+            }
+            //      return (Status::new(200), Ok(Json(x)))
+        }
+        Err(e) => (
+            Status::new(500),
+            Err(Json(ErrorResponse {
+                code: 500,
+                message: e.to_string(),
+            })),
+        ),
+    }
+}
 pub fn get_routes() -> Vec<Route> {
-    routes![index, get_by_id, new_nft, get_stage_stats]
+    routes![index, get_by_id, new_nft, get_stage_stats, check_name]
 }

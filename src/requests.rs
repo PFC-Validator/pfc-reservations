@@ -20,6 +20,11 @@ pub struct NewNFTRequest {
 pub struct NewNFTResponse {
     pub nft_id: Uuid,
 }
+#[derive(Serialize)]
+pub struct NameNFTResponse {
+    pub allowed: bool,
+    pub message: Option<String>,
+}
 
 #[derive(Serialize)]
 pub struct NFTTallyResponse {
@@ -53,6 +58,7 @@ pub struct Reservation {
     pub assigned_on: Option<DateTime<Utc>>,
     pub has_submit_error: bool,
     pub in_process: bool,
+    pub tx_hash: Option<String>,
 }
 
 /// request a NFT to be reserved

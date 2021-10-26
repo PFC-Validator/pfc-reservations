@@ -145,6 +145,11 @@ async fn get_signed_metadata(
         ),
     }
 }
+
+#[options("/hash")]
+async fn options_assign_txhash() -> rocket::response::status::Custom<String> {
+    rocket::response::status::Custom(Status::new(200), "OK".into())
+}
 #[post("/hash", format = "json", data = "<assign_hash_request>")]
 async fn assign_txhash(
     conn: NFTDatabase,
@@ -221,6 +226,11 @@ async fn assign_txhash(
         }
     })
     .await
+}
+
+#[options("/tx")]
+async fn options_assign_tx() -> rocket::response::status::Custom<String> {
+    rocket::response::status::Custom(Status::new(200), "OK".into())
 }
 #[post("/tx", format = "json", data = "<assign_hash_request>")]
 async fn assign_tx(
@@ -301,5 +311,11 @@ async fn assign_tx(
 }
 
 pub fn get_routes() -> Vec<Route> {
-    routes![get_signed_metadata, assign_txhash, assign_tx]
+    routes![
+        get_signed_metadata,
+        assign_txhash,
+        assign_tx,
+        options_assign_txhash,
+        options_assign_tx
+    ]
 }

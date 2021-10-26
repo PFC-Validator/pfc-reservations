@@ -50,7 +50,7 @@ pub fn get_reservations_for_wallet(
 ) -> (Status, Result<Json<Vec<Reservation>>, Json<ErrorResponse>>) {
     match conn.query(
         r#"
-        Select  reserved_to_wallet_address, id, reserved_until, reserved,  assigned,  assigned_on, has_submit_error, in_process
+        Select  reserved_to_wallet_address, id, reserved_until, reserved,  assigned,  assigned_on, has_submit_error, in_process, txhash
         from NFT
         where (reserved_to_wallet_address=$1 and reserved=true and reserved_until > now()) or assigned_to_wallet_address=$2"#,
         &[&String::from(wallet_address),&String::from(wallet_address)],
@@ -64,16 +64,19 @@ pub fn get_reservations_for_wallet(
                     reserved=false;
                     reserved_until= None
                 }
-                Reservation{
-                wallet_address: wallet_address.to_string(),
-                nft_id: r.get(1),
-                reserved,
-                reserved_until,
-                assigned: r.get(4),
-                assigned_on: r.get(5),
-                has_submit_error: r.get(6),
-                    in_process:r.get(7)
-            }}).collect::<Vec<Reservation>>();
+                let txhash:Option<String> = r.get(8);
+                Reservation {
+                    wallet_address: wallet_address.to_string(),
+                    nft_id: r.get(1),
+                    reserved,
+                    reserved_until,
+                    assigned: r.get(4),
+                    assigned_on: r.get(5),
+                    has_submit_error: r.get(6),
+                    in_process: r.get(7),
+                    tx_hash: txhash
+                }
+            }).collect::<Vec<Reservation>>();
 
                 (Status::new(200), Ok(Json(reservations)))
 
@@ -533,4 +536,18 @@ pub fn set_tx_for_nft(conn: &mut Client, nft: &Uuid, tx: &str) -> Result<u64, Er
         "update NFT set signed_packet = $1, in_process = true where id = $2",
         &[&String::from(tx), &nft],
     )
+}
+
+pub fn is_name_available(conn: &mut Client, name: &str) -> Result<bool, Error> {
+    let query = conn.query_one(
+        "select count(*) from NFT where upper(name) = upper( $1)",
+        &[&String::from(name)],
+    );
+    match query {
+        Ok(row) => {
+            let cnt: i64 = row.get(0);
+            Ok(cnt == 0)
+        }
+        Err(db_err) => Err(db_err),
+    }
 }

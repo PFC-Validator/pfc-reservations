@@ -57,6 +57,10 @@ pub struct ReservationState {
     pub max_reservations: usize,
     pub max_reservation_duration: Duration,
     pub debug_mode: bool,
+    pub chain: String,
+    pub lcd: String,
+    pub fcd: String,
+    pub nft_contract: String,
 }
 
 #[launch]
@@ -86,12 +90,21 @@ fn rocket() -> Rocket<Build> {
         .unwrap()
         .parse()
         .unwrap();
+    let lcd = env::var("LCD_URL").expect("Missing LCD_URL Server in environment");
+    let fcd = env::var("FCD_URL").expect("Missing FCD_URL server in environment");
+    let chain = env::var("CHAIN_ID").expect("Missing CHAIN_ID server in environment");
+    let nft_contract =
+        env::var("NFT_CONTRACT").expect("Missing NFT_CONTRACT server in environment");
     let reservation_state = ReservationState {
         signing_key,
         verification_key: public_key,
         max_reservations,
         max_reservation_duration: Duration::minutes(max_reservation_duration),
         debug_mode,
+        lcd,
+        fcd,
+        chain,
+        nft_contract,
     };
     let db: Map<_, Value> = map! {"url"=>db_url.into(),"pool_size"=>pool_size.into()};
     let figment = rocket::Config::figment().merge(("databases", map!["NFT"=>db]));
