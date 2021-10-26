@@ -90,9 +90,12 @@ pub fn generate_signature(
     let secp_tls = SignatureLocalStorage::new();
     let secp = secp_tls.secp.get_or(Secp256k1::new);
     match private_key.sign(secp, message) {
-        Ok(sig) => Ok(SignatureB64 {
-            signature: sig.signature,
-        }),
+        Ok(sig) => {
+            log::info!("Public Key Used:{}", sig.pub_key.value);
+            Ok(SignatureB64 {
+                signature: sig.signature,
+            })
+        }
         Err(e) => Err(Json(ErrorResponse {
             code: 500,
             message: e.to_string(),

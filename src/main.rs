@@ -44,7 +44,7 @@ impl Fairing for CORS {
         ));
         response.set_header(Header::new(
             "Access-Control-Allow-Headers",
-            "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range",
+            "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,X-Reservation-Signature",
         ));
         response.set_header(Header::new("Access-Control-Allow-Credentials", "true"));
     }

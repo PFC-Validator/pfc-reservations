@@ -23,6 +23,12 @@ async fn get_by_address(
     conn.run(move |c| get_reservations_for_wallet(c, &address))
         .await
 }
+
+#[options("/new")]
+async fn options_new_reservation() -> rocket::response::status::Custom<String> {
+    rocket::response::status::Custom(Status::new(200), "OK".into())
+}
+
 #[post("/new", format = "json", data = "<reservation_in>")]
 async fn new_reservation(
     conn: NFTDatabase,
@@ -40,6 +46,11 @@ async fn new_reservation(
         if state.debug_mode {
             log::warn!("IGNORING SIGNATURES");
         } else {
+            log::warn!(
+                "Signature Failed {}/{}",
+                reservation_in_json,
+                &state.verification_key
+            );
             return (
                 Status::new(403),
                 Err(Json(ErrorResponse {
@@ -113,5 +124,5 @@ async fn new_reservation(
 }
 
 pub fn get_routes() -> Vec<Route> {
-    routes![get_by_address, new_reservation]
+    routes![get_by_address, new_reservation, options_new_reservation]
 }

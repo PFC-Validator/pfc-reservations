@@ -62,8 +62,8 @@ pub struct NewReservationRequest {
     pub wallet_address: String,
     /// how long to hold the reservation
     pub reserved_until: DateTime<Utc>,
-    /// optionally,
-    pub stage: Option<String>,
+    // optionally,
+    //pub stage: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]

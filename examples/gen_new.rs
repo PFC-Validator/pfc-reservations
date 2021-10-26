@@ -2,6 +2,7 @@ use pfc_reservation::requests::NewNFTRequest;
 use secp256k1::{All, Secp256k1};
 use std::env;
 use terra_rust_api::PrivateKey;
+use terra_rust_wallet::Wallet;
 
 fn main() {
     dotenv::dotenv().ok();
@@ -24,12 +25,13 @@ fn main() {
             animation_url: None,
             youtube_url: None,
         };
-        let json = serde_json::to_string(&new_nft).unwrap();
+        //   let json = serde_json::to_string(&new_nft).unwrap();
         let secp: Secp256k1<All> = Secp256k1::new();
         let signing_key_phrase = env::var("DEBUG_RESERVATION_AUTH")
             .expect("Environment Variable 'DEBUG_RESERVATION_AUTH' Not present");
 
         let signing_key = PrivateKey::from_words(&secp, &signing_key_phrase).unwrap();
+        let json = r#"random/{"token_uri":"https://www.merriam-webster.com/dictionary/petrify","image":null,"image_data":null,"external_url":null,"description":null,"name":null,"attributes":[{"display_type":null,"trait_type":"gender","value":"male"},{"display_type":null,"trait_type":"name","value":"Jim Morrisson"}],"background_color":null,"animation_url":null,"youtube_url":null}"#;
         let sig = signing_key.sign(&secp, &json).unwrap();
         println!("Message:\n{}", json);
         println!("Signature:\n{}", sig.signature);
