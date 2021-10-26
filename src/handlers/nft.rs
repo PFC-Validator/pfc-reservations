@@ -175,6 +175,7 @@ async fn get_by_id(
         ),
     }
 }
+
 #[options("/new")]
 async fn options_new_nft() -> rocket::response::status::Custom<String> {
     rocket::response::status::Custom(Status::new(200), "OK".into())

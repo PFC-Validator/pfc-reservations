@@ -5,6 +5,7 @@ use crate::{NFTDatabase, ReservationState};
 use chrono::Utc;
 use pfc_reservation::requests::{
     AssignHashRequest, AssignSignedTxRequest, ErrorResponse, Metadata, MetadataResponse,
+    NewReservationResponse,
 };
 use rocket::http::Status;
 use rocket::serde::json::Json;
@@ -69,6 +70,13 @@ pub fn build_metadata_response(
         ),
     }
 }
+#[options("/<_wallet>/<_nft>")]
+async fn options_signed_metadata(
+    _wallet: String,
+    _nft: Uuid,
+) -> rocket::response::status::Custom<String> {
+    rocket::response::status::Custom(Status::new(200), "OK".into())
+}
 
 #[get("/<wallet>/<nft>")]
 async fn get_signed_metadata(
@@ -77,12 +85,17 @@ async fn get_signed_metadata(
     state: &State<ReservationState>,
     wallet: String,
     nft: Uuid,
-) -> (Status, Result<Json<MetadataResponse>, Json<ErrorResponse>>) {
+) -> (
+    Status,
+    Result<Json<NewReservationResponse>, Json<ErrorResponse>>,
+) {
     if let Err(e) = is_valid_address(&wallet) {
         return (Status::new(403), Err(e));
     }
-    let nft_json = serde_json::to_string(&nft).unwrap();
-    if let Err(e) = verify_signature(&nft_json, &signature, &state.verification_key) {
+    let ss = format!("{{\"nft\":\"{}\"}}", nft.to_string());
+
+    //  log::info!("{}", ss);
+    if let Err(e) = verify_signature(&ss, &signature, &state.verification_key) {
         if state.debug_mode {
             log::warn!("IGNORING SIGNATURES");
         } else {
@@ -111,7 +124,13 @@ async fn get_signed_metadata(
                                 &nft_full.meta_data,
                             );
                             match x.1 {
-                                Ok(y) => (x.0, Ok(Json(y))),
+                                Ok(y) => (
+                                    x.0,
+                                    Ok(Json(NewReservationResponse {
+                                        nft_id: nft,
+                                        metadata_response: y,
+                                    })),
+                                ),
                                 Err(e) => (x.0, Err(e)),
                             }
                         }
@@ -316,6 +335,7 @@ pub fn get_routes() -> Vec<Route> {
         assign_txhash,
         assign_tx,
         options_assign_txhash,
-        options_assign_tx
+        options_assign_tx,
+        options_signed_metadata
     ]
 }
