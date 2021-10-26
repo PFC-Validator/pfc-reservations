@@ -52,7 +52,7 @@ pub fn get_reservations_for_wallet(
         r#"
         Select  reserved_to_wallet_address, id, reserved_until, reserved,  assigned,  assigned_on, has_submit_error, in_process, txhash
         from NFT
-        where (reserved_to_wallet_address=$1 and reserved=true and reserved_until > now()) or assigned_to_wallet_address=$2"#,
+        where (reserved_to_wallet_address=$1 and ((reserved=true and reserved_until > now()) or in_process=true) ) or assigned_to_wallet_address=$2"#,
         &[&String::from(wallet_address),&String::from(wallet_address)],
     ) {
         Ok(reservation_rows) => {
