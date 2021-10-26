@@ -175,7 +175,10 @@ async fn get_by_id(
         ),
     }
 }
-
+#[options("/new")]
+async fn options_new_nft() -> rocket::response::status::Custom<String> {
+    rocket::response::status::Custom(Status::new(200), "OK".into())
+}
 #[post("/new", format = "json", data = "<nft_in>")]
 async fn new_nft(
     conn: NFTDatabase,
@@ -313,5 +316,12 @@ async fn check_name(
     }
 }
 pub fn get_routes() -> Vec<Route> {
-    routes![index, get_by_id, new_nft, get_stage_stats, check_name]
+    routes![
+        index,
+        get_by_id,
+        new_nft,
+        get_stage_stats,
+        check_name,
+        options_new_nft
+    ]
 }
