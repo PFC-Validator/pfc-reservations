@@ -22,10 +22,11 @@ create table NFT
     has_submit_error           boolean          default false,
     reserved_until             timestamp with time zone null,
     assigned_on                timestamp with time zone null,
-    in_process boolean default false,
-    txhash char(64) default null
+    in_process                 boolean          default false,
+    txhash                     char(64)         default null
 
 );
+
 create table NFT_Reservation
 (
     id             uuid primary key DEFAULT gen_random_uuid(),
@@ -38,15 +39,15 @@ create table NFT_Reservation
 
 create table stage_whitelist
 (
-    id              uuid primary key         DEFAULT gen_random_uuid(),
-    code            char(20)     not null,
-    name            varchar(200) not null,
-    attribute_type  varchar(25)  null,
-    attribute_value varchar(100) null,
-    is_default      bool                     default false,
-    stage_open      timestamp with time zone default now(),
+    id              uuid primary key              DEFAULT gen_random_uuid(),
+    code            char(20)                 not null,
+    name            varchar(200)             not null,
+    attribute_type  varchar(25)              null,
+    attribute_value varchar(100)             null,
+    is_default      bool                          default false,
+    stage_open      timestamp with time zone      default now(),
     stage_close     timestamp with time zone null default null,
-    stage_free      bool                     default false
+    stage_free      bool                          default false
 );
 
 --
