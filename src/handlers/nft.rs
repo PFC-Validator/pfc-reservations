@@ -5,7 +5,7 @@ use crate::{requests, ReservationState};
 use chrono::{DateTime, Utc};
 
 use crate::db::{get_nft_stat, get_stages, is_name_available};
-use pfc_reservation::requests::{
+use crate::requests::{
     ErrorResponse, NFTStageTallyStat, NFTTallyResponse, NFTTallyStat, NameNFTResponse,
 };
 use postgres::Statement;
@@ -175,7 +175,6 @@ async fn get_by_id(
         ),
     }
 }
-
 #[options("/new")]
 async fn options_new_nft() -> rocket::response::status::Custom<String> {
     rocket::response::status::Custom(Status::new(200), "OK".into())

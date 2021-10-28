@@ -1,5 +1,5 @@
+use crate::requests::{ErrorResponse, NFTTallyStat, Reservation};
 use chrono::{DateTime, Utc};
-use pfc_reservation::requests::{ErrorResponse, NFTTallyStat, Reservation};
 use postgres::{Client, Error, Statement};
 use rocket::http::Status;
 use rocket::serde::json::Json;
@@ -15,7 +15,7 @@ pub fn get_reservation_count(
     wallet_address: &str,
 ) -> Result<usize, (Status, Json<ErrorResponse>)> {
     match conn.query(
-        "Select count(*) from NFT where (reserved_to_wallet_address=$1 and reserved=true and reserved_until > now()) or assigned_to_wallet_address=$2",
+        "Select count(*) from NFT where (reserved_to_wallet_address=$1 and reserved=true and (in_process or reserved_until > now())) or assigned_to_wallet_address=$2",
         &[&String::from(wallet_address),&String::from(wallet_address)],
     ) {
         Ok(reservation_count) => {
@@ -50,7 +50,7 @@ pub fn get_reservations_for_wallet(
 ) -> (Status, Result<Json<Vec<Reservation>>, Json<ErrorResponse>>) {
     match conn.query(
         r#"
-        Select  reserved_to_wallet_address, id, reserved_until, reserved,  assigned,  assigned_on, has_submit_error, in_process, txhash
+        Select  reserved_to_wallet_address, id, reserved_until, reserved,  assigned,  assigned_on, has_submit_error, in_process, txhash, tx_error, tx_retry_count,token_id
         from NFT
         where (reserved_to_wallet_address=$1 and ((reserved=true and reserved_until > now()) or in_process=true) ) or assigned_to_wallet_address=$2"#,
         &[&String::from(wallet_address),&String::from(wallet_address)],
@@ -65,16 +65,26 @@ pub fn get_reservations_for_wallet(
                     reserved_until= None
                 }
                 let txhash:Option<String> = r.get(8);
+                let tx_error:Option<String> = r.get(9);
+                let assigned:bool = r.get(4);
+                let token_id:Option<String> = if assigned {
+                    r.get(11)
+                } else {
+                    None
+                };
                 Reservation {
                     wallet_address: wallet_address.to_string(),
                     nft_id: r.get(1),
                     reserved,
                     reserved_until,
-                    assigned: r.get(4),
+                    assigned,
                     assigned_on: r.get(5),
                     has_submit_error: r.get(6),
                     in_process: r.get(7),
-                    tx_hash: txhash
+                    tx_hash: txhash,
+                    tx_error: tx_error,
+                    tx_retry_count: r.get(10),
+                    token_id
                 }
             }).collect::<Vec<Reservation>>();
 
@@ -526,7 +536,7 @@ pub fn get_nft(conn: &mut Client, nft: &Uuid) -> Result<NftFull, Error> {
 /// set TXHash for NFT purchase, and set NFT 'in_progress'
 pub fn set_tx_hash_for_nft(conn: &mut Client, nft: &Uuid, txhash: &str) -> Result<u64, Error> {
     conn.execute(
-        "update NFT set txhash = $1, in_process = true where id = $2",
+        "update NFT set txhash = $1, in_process = true, has_submit_error =false, tx_retry_count = tx_retry_count+1 where id = $2",
         &[&String::from(txhash), &nft],
     )
 }
@@ -540,7 +550,7 @@ pub fn set_tx_for_nft(conn: &mut Client, nft: &Uuid, tx: &str) -> Result<u64, Er
 
 pub fn is_name_available(conn: &mut Client, name: &str) -> Result<bool, Error> {
     let query = conn.query_one(
-        "select count(*) from NFT where upper(name) = upper( $1)",
+        "select count(*) from NFT where upper(name) = upper($1) or upper(token_id) = upper($1)",
         &[&String::from(name)],
     );
     match query {
@@ -550,4 +560,42 @@ pub fn is_name_available(conn: &mut Client, name: &str) -> Result<bool, Error> {
         }
         Err(db_err) => Err(db_err),
     }
+}
+
+pub fn reservations_in_process(conn: &mut Client, limit: i64) -> Result<Vec<String>, Error> {
+    let query = conn.query(
+        "select txhash from nft where in_process = true and has_submit_error=false limit $1",
+        &[&limit],
+    );
+    match query {
+        Ok(rows) => Ok(rows.iter().map(|r| r.get(0)).collect::<Vec<String>>()),
+        Err(db_err) => Err(db_err),
+    }
+}
+
+pub fn nft_assign_tx_result(
+    conn: &mut Client,
+    wallet: Option<String>,
+    txhash: String,
+    result: bool,
+    tx_time: Option<DateTime<chrono::offset::Utc>>,
+    error_message: Option<String>,
+    token_id: Option<String>,
+) -> Result<u64, Error> {
+    if result {
+        conn.execute(
+            "update nft set has_submit_error=false, in_process=false, assigned=true, reserved=false, tx_error=null, assigned_to_wallet_address=$1, assigned_on=$2, token_id=$3 where txhash=$4",
+            &[&wallet,&tx_time, &token_id, &txhash],
+        )
+    } else {
+        conn.execute(
+            "update nft set has_submit_error=true, tx_error=$1 where txhash=$2",
+            &[&error_message, &txhash],
+        )
+    }
+    /*
+    match query {
+        Ok(rows) => Ok(rows),
+        Err(db_err) => Err(db_err),
+    }*/
 }

@@ -23,10 +23,14 @@ create table NFT
     reserved_until             timestamp with time zone null,
     assigned_on                timestamp with time zone null,
     in_process                 boolean          default false,
-    txhash                     char(64)         default null
+    txhash                     char(64)         default null,
+    tx_error                   varchar(2000)    default null,
+    token_id                   varchar(255)     default null,
+    tx_retry_count             integer          default 0
 
 );
-
+create index txhash on nft(txhash);
+create index token_id on nft(token_id);
 create table NFT_Reservation
 (
     id             uuid primary key DEFAULT gen_random_uuid(),

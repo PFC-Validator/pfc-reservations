@@ -53,7 +53,7 @@ impl Fairing for CORS {
 pub struct NFTDatabase(rocket_sync_db_pools::postgres::Client);
 pub struct ReservationState {
     pub signing_key: PrivateKey,
-    pub verification_key: String,
+    pub verification_key: Vec<String>,
     pub max_reservations: usize,
     pub max_reservation_duration: Duration,
     pub debug_mode: bool,
@@ -75,7 +75,11 @@ fn rocket() -> Rocket<Build> {
         .unwrap();
     let signing_key_phrase = env::var("RESERVATION_RESPONSE").unwrap();
     let signing_key = PrivateKey::from_words(&secp, &signing_key_phrase).unwrap();
-    let public_key = env::var("RESERVATION_AUTH_PUBLIC_KEY").unwrap();
+    let public_keys = env::var("RESERVATION_AUTH_PUBLIC_KEY")
+        .unwrap()
+        .split(",")
+        .map(|key| key.to_string())
+        .collect::<Vec<String>>();
     let max_reservations: usize = env::var("MAX_RESERVATIONS").unwrap().parse().unwrap();
     let debug_mode = match std::env::var("DEBUG_IGNORE_SIG") {
         Ok(x) => x == "true",
@@ -97,7 +101,7 @@ fn rocket() -> Rocket<Build> {
         env::var("NFT_CONTRACT").expect("Missing NFT_CONTRACT server in environment");
     let reservation_state = ReservationState {
         signing_key,
-        verification_key: public_key,
+        verification_key: public_keys,
         max_reservations,
         max_reservation_duration: Duration::minutes(max_reservation_duration),
         debug_mode,

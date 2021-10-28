@@ -1,12 +1,13 @@
 use crate::auth::{generate_signature, is_valid_address, verify_signature, SignatureB64};
-use crate::db::{get_nft, set_tx_for_nft, set_tx_hash_for_nft};
+use crate::db::{get_nft, nft_assign_tx_result, set_tx_for_nft, set_tx_hash_for_nft};
 use crate::models::NFT;
-use crate::{NFTDatabase, ReservationState};
-use chrono::Utc;
-use pfc_reservation::requests::{
+use crate::requests::ReservationTxResultRequest;
+use crate::requests::{
     AssignHashRequest, AssignSignedTxRequest, ErrorResponse, Metadata, MetadataResponse,
     NewReservationResponse,
 };
+use crate::{NFTDatabase, ReservationState};
+use chrono::Utc;
 use rocket::http::Status;
 use rocket::serde::json::Json;
 use rocket::{Route, State};
@@ -25,6 +26,13 @@ fn validate_reservation(nft: &NFT) -> (Status, Result<bool, Json<ErrorResponse>>
                 message: String::from("Not Reserved"),
             })),
         )
+    } else if nft.has_submit_error {
+        log::info!(
+            "{} - Reservation with error being retried - {:?}",
+            nft.id,
+            nft.reserved_until
+        );
+        (Status::new(200), Ok(true))
     } else if nft.reserved_until.is_none() || nft.reserved_until.unwrap() < Utc::now() {
         (
             Status::new(401),
@@ -328,14 +336,80 @@ async fn assign_tx(
     })
     .await
 }
+#[options("/tx_result")]
+async fn options_assign_tx_result() -> rocket::response::status::Custom<String> {
+    rocket::response::status::Custom(Status::new(200), "OK".into())
+}
+#[post("/tx_result", format = "json", data = "<hash_result>")]
+async fn assign_tx_result(
+    conn: NFTDatabase,
+    signature: SignatureB64,
+    state: &State<ReservationState>,
+    hash_result: Json<ReservationTxResultRequest>,
+) -> (Status, Result<Json<bool>, Json<ErrorResponse>>) {
+    let hash_result_stuff = hash_result.into_inner();
+    let hash_result_stuff_json = serde_json::to_string(&hash_result_stuff).unwrap();
+    log::info!("hash_result:{}", hash_result_stuff_json);
+    if let Err(e) = verify_signature(&hash_result_stuff_json, &signature, &state.verification_key) {
+        if state.debug_mode {
+            log::warn!("IGNORING SIGNATURES");
+        } else {
+            return (
+                Status::new(403),
+                Err(Json(ErrorResponse {
+                    code: 403,
+                    message: e.to_string(),
+                })),
+            );
+        }
+    }
+    //  let tx = hash_result_stuff.tx;
+    conn.run(move |c| {
+        let assign_result = nft_assign_tx_result(
+            c,
+            hash_result_stuff.wallet_address,
+            hash_result_stuff.tx,
+            hash_result_stuff.success,
+            hash_result_stuff.assigned_on,
+            hash_result_stuff.error,
+            hash_result_stuff.token_id,
+        );
+
+        match assign_result {
+            Ok(rows_updated) => {
+                if rows_updated == 1 {
+                    (Status::new(200), Ok(Json(true)))
+                } else {
+                    (
+                        Status::new(500),
+                        Err(Json(ErrorResponse {
+                            code: 500,
+                            message: String::from("TX not found"),
+                        })),
+                    )
+                }
+            }
+            Err(e) => (
+                Status::new(500),
+                Err(Json(ErrorResponse {
+                    code: 500,
+                    message: e.to_string(),
+                })),
+            ),
+        }
+    })
+    .await
+}
 
 pub fn get_routes() -> Vec<Route> {
     routes![
         get_signed_metadata,
         assign_txhash,
         assign_tx,
+        assign_tx_result,
         options_assign_txhash,
         options_assign_tx,
-        options_signed_metadata
+        options_signed_metadata,
+        options_assign_tx_result
     ]
 }

@@ -59,6 +59,9 @@ pub struct Reservation {
     pub has_submit_error: bool,
     pub in_process: bool,
     pub tx_hash: Option<String>,
+    pub tx_error: Option<String>,
+    pub tx_retry_count: i32,
+    pub token_id: Option<String>,
 }
 
 /// request a NFT to be reserved
@@ -128,4 +131,15 @@ pub struct AssignSignedTxRequest {
     pub nft_id: Uuid,
     /// the hash for the request
     pub signed_tx: String,
+}
+/// submit signed request to process TX result
+#[derive(Serialize, Deserialize, Clone)]
+pub struct ReservationTxResultRequest {
+    /// the hash for the request
+    pub tx: String,
+    pub wallet_address: Option<String>,
+    pub assigned_on: Option<DateTime<Utc>>,
+    pub token_id: Option<String>,
+    pub success: bool,
+    pub error: Option<String>,
 }

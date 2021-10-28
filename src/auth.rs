@@ -1,4 +1,4 @@
-use pfc_reservation::requests::ErrorResponse;
+use crate::requests::ErrorResponse;
 use rocket::http::Status;
 use rocket::request::{FromRequest, Outcome};
 use rocket::serde::json::Json;
@@ -37,7 +37,7 @@ impl Default for SignatureLocalStorage {
 pub fn verify_signature(
     verify_string: &str,
     sig: &SignatureB64,
-    public_key: &str,
+    public_keys: &[String],
 ) -> anyhow::Result<()> {
     let secp_tls = SignatureLocalStorage::new();
     let secp = secp_tls.secp.get_or(Secp256k1::new);
@@ -45,9 +45,17 @@ pub fn verify_signature(
     let hash_message: Message = Message::from_slice(&hash)?;
     let sig_bytes = base64::decode(&sig.signature)?;
     let sig_sec: Signature = Signature::from_compact(&sig_bytes)?;
-    let pub_key_bytes = base64::decode(public_key)?;
-    let pub_key: PublicKey = PublicKey::from_slice(&pub_key_bytes)?;
-    Ok(secp.verify(&hash_message, &sig_sec, &pub_key)?)
+    let mut result: Result<(), secp256k1::Error> = Err(secp256k1::Error::IncorrectSignature);
+    for public_key in public_keys {
+        let pub_key_bytes = base64::decode(public_key)?;
+        let pub_key: PublicKey = PublicKey::from_slice(&pub_key_bytes)?;
+
+        result = secp.verify(&hash_message, &sig_sec, &pub_key);
+        if result.is_ok() {
+            return Ok(());
+        }
+    }
+    Ok(result?)
 }
 
 #[rocket::async_trait]

@@ -1,15 +1,14 @@
 use crate::auth::{is_valid_address, verify_signature, SignatureB64};
 use crate::db::{do_reservation, get_reservations_for_wallet};
 use crate::handlers::mint::build_metadata_response;
+use crate::requests::{ErrorResponse, NewReservationRequest, NewReservationResponse, Reservation};
 use crate::{NFTDatabase, ReservationState};
 use chrono::Utc;
-use pfc_reservation::requests::{
-    ErrorResponse, NewReservationRequest, NewReservationResponse, Reservation,
-};
 use rocket::http::Status;
 use rocket::serde::json::Json;
 use rocket::{Route, State};
 
+use crate::db::reservations_in_process;
 use uuid::Uuid;
 
 #[get("/<address>")]
@@ -49,7 +48,7 @@ async fn new_reservation(
             log::warn!(
                 "Signature Failed {}/{}",
                 reservation_in_json,
-                &state.verification_key
+                &state.verification_key.join(",")
             );
             return (
                 Status::new(403),
@@ -123,6 +122,26 @@ async fn new_reservation(
     }
 }
 
+#[get("/in-process")]
+async fn get_in_process(
+    conn: NFTDatabase,
+) -> (Status, Result<Json<Vec<String>>, Json<ErrorResponse>>) {
+    match conn.run(move |c| reservations_in_process(c, 100)).await {
+        Ok(x) => (Status::new(200), Ok(Json(x))),
+        Err(e) => (
+            Status::new(500),
+            Err(Json(ErrorResponse {
+                code: 500,
+                message: e.to_string(),
+            })),
+        ),
+    }
+}
 pub fn get_routes() -> Vec<Route> {
-    routes![get_by_address, new_reservation, options_new_reservation]
+    routes![
+        get_by_address,
+        new_reservation,
+        options_new_reservation,
+        get_in_process
+    ]
 }
