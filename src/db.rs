@@ -1,12 +1,15 @@
 use crate::requests::{ErrorResponse, NFTTallyStat, Reservation};
 use chrono::{DateTime, Utc};
-use postgres::{Client, Error, Statement};
+use postgres::{Client, Error, Row, Statement};
 use rocket::http::Status;
 use rocket::serde::json::Json;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
+use std::ops::Add;
 
 use crate::models::{NftFull, Stage, NFT};
+use crate::requests::Metadata;
+use crate::requests::{MintReservation, OpenStageWallet};
 use uuid::Uuid;
 
 // examine available NFTs and 'reserve' one
@@ -33,13 +36,15 @@ pub fn get_reservation_count(
                 ))
             }
         }
-        Err(db_err) => Err((
+        Err(db_err) => {
+            log::error!("get_reservation_count: {}", db_err.to_string());
+            Err((
             Status::new(500),
             Json(ErrorResponse {
                 code: 500,
                 message: db_err.to_string(),
             }),
-        )),
+        ))},
     }
 }
 
@@ -82,7 +87,7 @@ pub fn get_reservations_for_wallet(
                     has_submit_error: r.get(6),
                     in_process: r.get(7),
                     tx_hash: txhash,
-                    tx_error: tx_error,
+                    tx_error,
                     tx_retry_count: r.get(10),
                     token_id
                 }
@@ -91,13 +96,15 @@ pub fn get_reservations_for_wallet(
                 (Status::new(200), Ok(Json(reservations)))
 
         }
-        Err(db_err) => (
+        Err(db_err) => {
+            log::error!("get_reservations_for_wallet: {}", db_err.to_string());
+            (
             Status::new(500),
             Err(Json(ErrorResponse {
                 code: 500,
                 message: db_err.to_string(),
             }),
-        )),
+        ))},
     }
 }
 /// do a reservation for a NFT, picking NFT in seemingly random order
@@ -149,7 +156,7 @@ pub fn get_and_reserve_available_nft(
     wallet_address: &str,
     reserved_until: &DateTime<Utc>,
 ) -> Result<(Uuid, serde_json::Value), (Status, Json<ErrorResponse>)> {
-    let pg_ts: &DateTime<chrono::offset::Utc> = reserved_until;
+    //  let pg_ts: &DateTime<chrono::offset::Utc> = reserved_until;
     let mut hasher = DefaultHasher::new();
     wallet_address.hash(&mut hasher);
     let hash = hasher.finish();
@@ -179,58 +186,20 @@ pub fn get_and_reserve_available_nft(
                 let _r = conn.execute("select setseed($1)", &[&seed]);
                 log::info!("_r = {:?}", _r);
                 for stage in stages {
-                    let query = if let Some(att_type) = stage.attribute_type {
-                        if let Some(att_value) = stage.attribute_value {
-                            log::info!("Stage: {} {}/{}", stage.code, att_type, att_value);
-                            let select_stmt = r#"                                
-                                update nft set reserved=true, reserved_to_wallet_address=$1 ,reserved_until=$2
-                                where id = (
-                                    select id as available
-                                    from nft n, json_array_elements(n.meta_data -> 'attributes' ) att
-                                    where assigned = false 
-                                     and (reserved=false or reserved_until < now())
-                                     and  att ->> 'trait_type' = $3 and att ->> 'value' = $4
-                                     and has_submit_error=false
-                                     and in_process=false
-                                    order by random()
-                                    limit 1
-                                ) returning id,meta_data "#;
-                            let stmt_reserve_nft: Statement = conn.prepare(select_stmt).unwrap();
-                            conn.query(
-                                &stmt_reserve_nft,
-                                &[&String::from(wallet_address), pg_ts, &att_type, &att_value],
-                            )
-                        } else {
-                            return Err((
-                                Status::new(500),
-                                Json(ErrorResponse {
-                                    code: 500,
-                                    message: format!("Stage: {} is misconfigured", stage.code),
-                                }),
-                            ));
-                        }
-                    } else {
-                        log::info!("Stage: {} ", stage.code);
-                        let select_stmt = r#"        
-                            update nft set reserved=true, reserved_to_wallet_address=$1 ,reserved_until=$2
-                            where id = (
-                                select id as available
-                                from nft
-                                where assigned = false 
-                                and (reserved=false or reserved_until < now())                   
-                                and has_submit_error=false
-                                and in_process=false
-                                order by random()
-                                limit 1
-                            ) returning id,meta_data "#;
-                        let stmt_reserve_nft: Statement = conn.prepare(select_stmt).unwrap();
-                        conn.query(&stmt_reserve_nft, &[&String::from(wallet_address), pg_ts])
-                    };
-
+                    let query = do_reservation_in_stage(
+                        conn,
+                        &stage,
+                        wallet_address,
+                        1,
+                        false,
+                        reserved_until,
+                    );
                     match query {
                         Ok(rows) => {
+                            log::info!("get_and_reserve_available_nft/rows={}", rows.len());
                             if let Some(row) = rows.first() {
-                                let r = increase_stage_reservation(conn, stage.id, wallet_address);
+                                let r =
+                                    increase_stage_reservation(conn, stage.id, wallet_address, 1);
                                 if let Err(db_err) = r {
                                     log::error!(
                                         "Wallet Whitelist has error {}. We still reserved",
@@ -249,13 +218,10 @@ pub fn get_and_reserve_available_nft(
                             }
                         }
                         Err(db_err) => {
-                            return Err((
-                                Status::new(500),
-                                Json(ErrorResponse {
-                                    code: 500,
-                                    message: db_err.to_string(),
-                                }),
-                            ))
+                            return {
+                                log::error!("get_and_reserve_available_nft: {}", db_err.1.message);
+                                Err(db_err)
+                            }
                         }
                     }
                 }
@@ -271,15 +237,52 @@ pub fn get_and_reserve_available_nft(
         Err(e) => Err(e),
     }
 }
+/// get a single stage
+pub fn get_stage(
+    conn: &mut Client,
+    code: &str,
+) -> Result<Option<Stage>, (Status, Json<ErrorResponse>)> {
+    match conn.query(
+        "Select id,code,name,attribute_type,attribute_value,is_default,stage_free,stage_open,stage_close from stage_whitelist where code=$1",
+        &[&String::from(code)],
+    ) {
+        Ok(rows) => {
 
+            let stage = rows.first().map (|r|{
+                let code:String = r.get(1);
+                Stage{
+                    id: r.get(0),
+                    code: code.trim().to_string(),
+                    name: r.get(2),
+                    attribute_type: r.get(3),
+                    attribute_value: r.get(4),
+                    is_default: r.get(5),
+                    stage_free: r.get(6),
+                    stage_open: r.get(7),
+                    stage_close: r.get(8)
+                }});
+            Ok(stage)
+        }
+        Err(db_err) => {
+            log::error!("get_stage: {}", db_err.to_string());
+            Err((
+            Status::new(500),
+            Json(ErrorResponse {
+                code: 500,
+                message: db_err.to_string(),
+            }),
+        ))},
+    }
+}
+/// get a collection of stages
 pub fn get_stages(conn: &mut Client) -> Result<Vec<Stage>, (Status, Json<ErrorResponse>)> {
     match conn.query(
-        "Select id,code,name,attribute_type,attribute_value,is_default,stage_free,stage_open from stage_whitelist",
+        "Select id,code,name,attribute_type,attribute_value,is_default,stage_free,stage_open, stage_close from stage_whitelist",
         &[],
     ) {
-        Ok(row) => {
+        Ok(rows) => {
 
-            let stages = row.iter().map (|r|{
+            let stages = rows.iter().map (|r|{
                 let code:String = r.get(1);
                 Stage{
                 id: r.get(0),
@@ -289,17 +292,21 @@ pub fn get_stages(conn: &mut Client) -> Result<Vec<Stage>, (Status, Json<ErrorRe
                 attribute_value: r.get(4),
                 is_default: r.get(5),
                 stage_free: r.get(6),
-                stage_open: r.get(7)
-            }}).collect::<Vec<Stage>>();
+                stage_open: r.get(7),
+                stage_close : r.get(8)
+                }
+            }).collect::<Vec<Stage>>();
            Ok( stages)
         }
-        Err(db_err) => Err((
+        Err(db_err) =>{
+            log::error!("get_stages: {}", db_err.to_string());
+            Err((
             Status::new(500),
             Json(ErrorResponse {
                 code: 500,
                 message: db_err.to_string(),
             }),
-        )),
+        ))},
     }
 }
 
@@ -330,7 +337,7 @@ pub fn get_nft_stat(
         }
         None => conn.query(
             "Select sum(case assigned when true then 1 else 0 end),
-       sum(case reserved when true then 1  else 0 end),
+       sum(case reserved when true then 1 else 0 end),
        sum(1) from nft",
             &[],
         ),
@@ -351,13 +358,16 @@ pub fn get_nft_stat(
                 })
             }
         }
-        Err(db_err) => Err((
-            Status::new(500),
-            Json(ErrorResponse {
-                code: 500,
-                message: db_err.to_string(),
-            }),
-        )),
+        Err(db_err) => {
+            log::error!("get_nft_stat: {}", db_err.to_string());
+            Err((
+                Status::new(500),
+                Json(ErrorResponse {
+                    code: 500,
+                    message: db_err.to_string(),
+                }),
+            ))
+        }
     }
 }
 pub fn get_open_stage(
@@ -381,66 +391,26 @@ pub fn get_open_stage(
                 ))
             }
         }
-        Err(db_err) => Err((
-            Status::new(500),
-            Json(ErrorResponse {
-                code: 500,
-                message: db_err.to_string(),
-            }),
-        )),
-    }
-}
-/*
-pub(crate) fn validate_stage_for_wallet(
-    mut conn: Client,
-    wallet: &str,
-    stage: &str,
-) -> Result<WalletStageAllocation, (Status, Json<ErrorResponse>)> {
-    let query = conn.query(
-        "select w.id, allocation_count,reserved_count,assigned_count, s.stage_open
-from wallet_whitelist w, stage_whitelist s
-where s.code=$1
-  and w.wallet_address=$2
-and s.id = w.stage",
-        &[&String::from(stage), &String::from(wallet)],
-    );
-    match query {
-        Ok(rows) => {
-            if let Some(row) = rows.first() {
-                Ok(WalletStageAllocation {
-                    id: Some(row.get(0)),
-                    allocation_count: row.get(1),
-                    reserved_count: row.get(2),
-                    assigned_count: row.get(3),
-                    stage_open: Some(row.get(4)),
-                })
-            } else {
-                Ok(WalletStageAllocation {
-                    id: None,
-                    allocation_count: 0,
-                    reserved_count: 0,
-                    assigned_count: 0,
-                    stage_open: None,
-                })
-            }
+        Err(db_err) => {
+            log::error!("get_open_stage: {}", db_err.to_string());
+            Err((
+                Status::new(500),
+                Json(ErrorResponse {
+                    code: 500,
+                    message: db_err.to_string(),
+                }),
+            ))
         }
-        Err(db_err) => Err((
-            Status::new(500),
-            Json(ErrorResponse {
-                code: 500,
-                message: db_err.to_string(),
-            }),
-        )),
     }
 }
 
- */
+/// for regular reservations, get a list of 'special stages/whitelists' that the wallet is entitled too
 pub fn get_open_stages_for_wallet(
     conn: &mut Client,
     wallet: &str,
 ) -> Result<Vec<Stage>, (Status, Json<ErrorResponse>)> {
     let query = conn.query(
-        "select id,code,name,attribute_type,attribute_value,is_Default,stage_free,stage_open, 1 as sort_pref 
+        "select id,code,name,attribute_type,attribute_value,is_Default,stage_free,stage_open, stage_close, 1 as sort_pref 
         from stage_whitelist where
         stage_open < now() and  
         id in (
@@ -450,7 +420,7 @@ pub fn get_open_stages_for_wallet(
       and allocation_count > (reserved_count + wallet_whitelist.assigned_count)
 )
 union
-select id,code,name,attribute_type,attribute_value,is_Default,stage_free,stage_open,2
+select id,code,name,attribute_type,attribute_value,is_Default,stage_free,stage_open,stage_close,2
 from stage_whitelist
 where
         stage_open < now() and
@@ -471,15 +441,19 @@ order by sort_pref
                 is_default: r.get(5),
                 stage_free: r.get(6),
                 stage_open: r.get(7),
+                stage_close: r.get(8),
             })
             .collect::<Vec<Stage>>()),
-        Err(db_err) => Err((
-            Status::new(500),
-            Json(ErrorResponse {
-                code: 500,
-                message: db_err.to_string(),
-            }),
-        )),
+        Err(db_err) => {
+            log::error!("get_open_stages_for_wallet:{}", db_err.to_string());
+            Err((
+                Status::new(500),
+                Json(ErrorResponse {
+                    code: 500,
+                    message: db_err.to_string(),
+                }),
+            ))
+        }
     }
 }
 /// update wallet reservation count
@@ -487,10 +461,11 @@ pub fn increase_stage_reservation(
     conn: &mut Client,
     stage_id: Uuid,
     wallet_address: &str,
+    amount: i32,
 ) -> Result<u64, Error> {
     conn.execute(
-        "update wallet_whitelist set reserved_count =reserved_count+ 1 where wallet_address=$1 and stage = $2",
-        &[&String::from(wallet_address), &stage_id],
+        "update wallet_whitelist set reserved_count =reserved_count+ $3 where wallet_address=$1 and stage = $2",
+        &[&String::from(wallet_address), &stage_id,&amount],
     )
 }
 /// retried NFT from database
@@ -564,7 +539,34 @@ pub fn is_name_available(conn: &mut Client, name: &str) -> Result<bool, Error> {
 
 pub fn reservations_in_process(conn: &mut Client, limit: i64) -> Result<Vec<String>, Error> {
     let query = conn.query(
-        "select txhash from nft where in_process = true and has_submit_error=false limit $1",
+        "select txhash from nft where in_process = true and has_submit_error=false and in_mint_run=false limit $1",
+        &[&limit],
+    );
+    match query {
+        Ok(rows) => Ok(rows.iter().map(|r| r.get(0)).collect::<Vec<String>>()),
+        Err(db_err) => Err(db_err),
+    }
+}
+
+pub fn reservations_in_mint_process(
+    conn: &mut Client,
+    limit: i64,
+) -> Result<Vec<(String, String)>, Error> {
+    let query = conn.query(
+        "select txhash, name from nft where in_process = true and has_submit_error=false and in_mint_run=true limit $1",
+        &[&limit],
+    );
+    match query {
+        Ok(rows) => Ok(rows
+            .iter()
+            .map(|r| (r.get(0), r.get(1)))
+            .collect::<Vec<(String, String)>>()),
+        Err(db_err) => Err(db_err),
+    }
+}
+pub fn reservations_in_mint_reserved(conn: &mut Client, limit: i64) -> Result<Vec<String>, Error> {
+    let query = conn.query(
+        "select name from nft where assigned=false and reserved = true and has_submit_error=false and in_mint_run=true limit $1",
         &[&limit],
     );
     match query {
@@ -593,9 +595,169 @@ pub fn nft_assign_tx_result(
             &[&error_message, &txhash],
         )
     }
-    /*
+}
+
+pub fn nft_assign_owner(conn: &mut Client, wallet: String, token_id: String) -> Result<u64, Error> {
+    log::debug!("nft_assign_owner: {} {}", wallet, token_id);
+    conn.execute(
+            r#"update nft set has_submit_error=false, in_process=false, assigned=true, reserved=false, tx_error=null, assigned_to_wallet_address=$1, token_id=$2 
+            where reserved_to_wallet_address=$3 and name=$4"#,
+            &[&wallet, &token_id,&wallet,&token_id],
+        )
+}
+
+/// get a list of open wallets for a stage
+pub fn get_open_wallets_for_stage(
+    conn: &mut Client,
+    stage_id: Uuid,
+) -> Result<Vec<OpenStageWallet>, Error> {
+    let query = conn.query(
+        r#"select wallet_address, allocation_count, reserved_count, assigned_count
+            from wallet_whitelist
+             where stage = $1  
+            and allocation_count > ( reserved_count + assigned_count) "#,
+        &[&stage_id],
+    );
     match query {
-        Ok(rows) => Ok(rows),
-        Err(db_err) => Err(db_err),
-    }*/
+        Ok(rows) => Ok(rows
+            .iter()
+            .map(|r| OpenStageWallet {
+                wallet_address: r.get(0),
+                stage_id,
+                allocated: r.get(1),
+                reserved: r.get(2),
+                assigned: r.get(3),
+            })
+            .collect::<Vec<OpenStageWallet>>()),
+        Err(db_err) => {
+            log::error!("get_open_wallets_for_stage:{}", db_err);
+            Err(db_err)
+        }
+    }
+}
+pub fn mint_nft_for_wallet_in_stage(
+    conn: &mut Client,
+    stage: &Stage,
+    wallet_address: &str,
+    amount: i64,
+) -> Result<Vec<MintReservation>, (Status, Json<ErrorResponse>)> {
+    let close = stage
+        .stage_close
+        .unwrap_or_else(|| chrono::Utc::now().add(chrono::Duration::hours(24)));
+    let query = do_reservation_in_stage(conn, stage, wallet_address, amount, true, &close);
+    match query {
+        Ok(rows) => {
+            log::debug!("mint_nft_for_wallet_in_stage/rows={}", rows.len());
+            let _r = increase_stage_reservation(conn, stage.id, wallet_address, rows.len() as i32)
+                .map_err(|e| {
+                    log::error!("mint_nft_for_wallet_in_stage:{}", e.to_string());
+                    (
+                        Status::InternalServerError,
+                        Json(ErrorResponse {
+                            code: 500,
+                            message: e.to_string(),
+                        }),
+                    )
+                })?;
+
+            Ok(rows
+                .iter()
+                .map(|row| {
+                    let meta: Metadata = serde_json::from_value(row.get(1)).unwrap();
+                    MintReservation {
+                        wallet_address: wallet_address.to_string(),
+                        nft_id: row.get(0),
+                        meta_data: meta,
+                    }
+                })
+                .collect::<Vec<MintReservation>>())
+        }
+        Err(e) => {
+            log::error!("mint_nft_for_wallet_in_stage: {}", e.1.message);
+            Err(e)
+        }
+    }
+}
+pub fn do_reservation_in_stage(
+    conn: &mut Client,
+    stage: &Stage,
+    wallet_address: &str,
+    amount: i64,
+    is_mint: bool,
+    reserved_until: &DateTime<Utc>,
+) -> Result<Vec<Row>, (Status, Json<ErrorResponse>)> {
+    let pg_ts: &DateTime<chrono::offset::Utc> = reserved_until;
+    let query = if let Some(att_type) = &stage.attribute_type {
+        if let Some(att_value) = &stage.attribute_value {
+            log::info!(
+                "Stage: {} {}/{} - {}",
+                stage.code,
+                att_type,
+                att_value,
+                wallet_address
+            );
+            let select_stmt = r#"                                
+                                update nft set reserved=true, reserved_to_wallet_address=$1 ,reserved_until=$2, in_mint_run=$6
+                                where id in (
+                                    select id as available
+                                    from nft n, json_array_elements(n.meta_data -> 'attributes' ) att
+                                    where assigned = false 
+                                     and (reserved=false or reserved_until < now())
+                                     and  att ->> 'trait_type' = $3 and att ->> 'value' = $4
+                                     and has_submit_error=false
+                                     and in_process=false
+                                    order by random()
+                                    limit $5
+                                ) returning id,meta_data "#;
+            let stmt_reserve_nft: Statement = conn.prepare(select_stmt).unwrap();
+            conn.query(
+                &stmt_reserve_nft,
+                &[
+                    &String::from(wallet_address),
+                    pg_ts,
+                    &att_type,
+                    &att_value,
+                    &amount,
+                    &is_mint,
+                ],
+            )
+        } else {
+            return Err((
+                Status::new(500),
+                Json(ErrorResponse {
+                    code: 500,
+                    message: format!("Stage: {} is misconfigured", stage.code),
+                }),
+            ));
+        }
+    } else {
+        log::info!("Stage: {} - {}", stage.code, wallet_address);
+        let select_stmt = r#"        
+                            update nft set reserved=true, reserved_to_wallet_address=$1 ,reserved_until=$2, in_mint_run=$4
+                            where id in (
+                                select id as available
+                                from nft
+                                where assigned = false 
+                                and (reserved=false or reserved_until < now())                   
+                                and has_submit_error=false
+                                and in_process=false
+                                order by random()
+                                limit $3
+                            ) returning id,meta_data "#;
+        let stmt_reserve_nft: Statement = conn.prepare(select_stmt).unwrap();
+        conn.query(
+            &stmt_reserve_nft,
+            &[&String::from(wallet_address), pg_ts, &amount, &is_mint],
+        )
+    };
+    query.map_err(|db_err| {
+        log::error!("do_reservation_in_stage: {}", db_err.to_string());
+        (
+            Status::new(500),
+            Json(ErrorResponse {
+                code: 500,
+                message: format!("{}", db_err),
+            }),
+        )
+    })
 }

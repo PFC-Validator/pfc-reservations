@@ -1,7 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-
 #[derive(Serialize, Deserialize)]
 pub struct NewNFTRequest {
     pub name: String,
@@ -93,7 +92,7 @@ pub struct Trait {
     pub trait_type: String,
     pub value: String,
 }
-#[derive(Serialize, Deserialize, Debug, Default)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct Metadata {
     pub token_uri: String,
     pub image: Option<String>,
@@ -142,4 +141,25 @@ pub struct ReservationTxResultRequest {
     pub token_id: Option<String>,
     pub success: bool,
     pub error: Option<String>,
+}
+
+pub struct OpenStageWallet {
+    pub wallet_address: String,
+    pub stage_id: Uuid,
+    pub allocated: i32,
+    pub reserved: i32,
+    pub assigned: i32,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct MintReservation {
+    pub wallet_address: String,
+    pub nft_id: Uuid,
+    pub meta_data: Metadata,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct AssignOwner {
+    pub token_id: String,
+    pub wallet_address: String,
 }

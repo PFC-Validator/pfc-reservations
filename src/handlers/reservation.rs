@@ -1,5 +1,8 @@
 use crate::auth::{is_valid_address, verify_signature, SignatureB64};
-use crate::db::{do_reservation, get_reservations_for_wallet};
+use crate::db::{
+    do_reservation, get_open_wallets_for_stage, get_reservations_for_wallet, get_stage,
+    mint_nft_for_wallet_in_stage, reservations_in_mint_process, reservations_in_mint_reserved,
+};
 use crate::handlers::mint::build_metadata_response;
 use crate::requests::{ErrorResponse, NewReservationRequest, NewReservationResponse, Reservation};
 use crate::{NFTDatabase, ReservationState};
@@ -9,6 +12,8 @@ use rocket::serde::json::Json;
 use rocket::{Route, State};
 
 use crate::db::reservations_in_process;
+
+use crate::requests::MintReservation;
 use uuid::Uuid;
 
 #[get("/<address>")]
@@ -137,11 +142,144 @@ async fn get_in_process(
         ),
     }
 }
+#[get("/in-mint-process")]
+async fn get_in_mint_process(
+    conn: NFTDatabase,
+) -> (
+    Status,
+    Result<Json<Vec<(String, String)>>, Json<ErrorResponse>>,
+) {
+    match conn
+        .run(move |c| reservations_in_mint_process(c, 100))
+        .await
+    {
+        Ok(x) => (Status::new(200), Ok(Json(x))),
+        Err(e) => (
+            Status::new(500),
+            Err(Json(ErrorResponse {
+                code: 500,
+                message: e.to_string(),
+            })),
+        ),
+    }
+}
+/// These have been reserved by the system previously, but don't have a TX ID/in_process flag set
+#[get("/in-mint-reserved")]
+async fn get_in_mint_reserved(
+    conn: NFTDatabase,
+) -> (Status, Result<Json<Vec<String>>, Json<ErrorResponse>>) {
+    match conn
+        .run(move |c| reservations_in_mint_reserved(c, 100))
+        .await
+    {
+        Ok(x) => (Status::new(200), Ok(Json(x))),
+        Err(e) => (
+            Status::new(500),
+            Err(Json(ErrorResponse {
+                code: 500,
+                message: e.to_string(),
+            })),
+        ),
+    }
+}
+
+#[get("/free/stage/<stage>")]
+async fn get_free_stage(
+    conn: NFTDatabase,
+    signature: SignatureB64,
+    stage: String,
+    state: &State<ReservationState>,
+) -> (
+    Status,
+    Result<Json<Vec<MintReservation>>, Json<ErrorResponse>>,
+) {
+    let ss = format!("{{\"stage\":\"{}\"}}", stage.to_string());
+
+    //  log::info!("{}", ss);
+    if let Err(e) = verify_signature(&ss, &signature, &state.verification_key) {
+        if state.debug_mode {
+            log::warn!("IGNORING SIGNATURES");
+        } else {
+            return (
+                Status::new(403),
+                Err(Json(ErrorResponse {
+                    code: 403,
+                    message: e.to_string(),
+                })),
+            );
+        }
+    }
+    conn.run(move |c| match get_stage(c, &stage) {
+        Ok(stage_opt) => {
+            if let Some(stage_rec) = stage_opt {
+                if stage_rec.stage_free {
+                    match get_open_wallets_for_stage(c, stage_rec.id) {
+                        Ok(rows) => {
+                            let mut reservations_generated: Vec<MintReservation> =
+                                Default::default();
+                            for row in rows {
+                                let amount = row.allocated - row.assigned - row.reserved;
+                                if amount > 0 {
+                                    let reservations_result = mint_nft_for_wallet_in_stage(
+                                        c,
+                                        &stage_rec,
+                                        &row.wallet_address,
+                                        1,
+                                    );
+                                    match reservations_result {
+                                        Err(e) => {
+                                            return (e.0, Err(e.1));
+                                        }
+                                        Ok(reservations) => {
+                                            reservations.iter().for_each(|f| {
+                                                reservations_generated.push(f.clone())
+                                            });
+                                        }
+                                    }
+                                }
+                            }
+                            (Status::new(200), Ok(Json(reservations_generated)))
+                        }
+                        Err(e) => (
+                            Status::new(500),
+                            Err(Json(ErrorResponse {
+                                code: 500,
+                                message: e.to_string(),
+                            })),
+                        ),
+                    }
+                } else {
+                    (
+                        Status::new(403),
+                        Err(Json(ErrorResponse {
+                            code: 403,
+                            message: "Stage is not free".to_string(),
+                        })),
+                    )
+                }
+            } else {
+                (
+                    Status::new(404),
+                    Err(Json(ErrorResponse {
+                        code: 404,
+                        message: "stage not found".to_string(),
+                    })),
+                )
+            }
+        }
+        Err(e) => (e.0, Err(e.1)),
+    })
+    .await
+}
+
 pub fn get_routes() -> Vec<Route> {
     routes![
         get_by_address,
         new_reservation,
         options_new_reservation,
-        get_in_process
+        get_in_process,
+        get_in_mint_process,
+        get_in_mint_reserved,
+        get_free_stage
     ]
 }

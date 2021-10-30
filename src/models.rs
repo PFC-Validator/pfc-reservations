@@ -44,6 +44,7 @@ pub struct Stage {
     pub is_default: bool,
     pub stage_free: bool,
     pub stage_open: DateTime<chrono::offset::Utc>,
+    pub stage_close: Option<DateTime<chrono::offset::Utc>>,
 }
 
 #[derive(Serialize)]

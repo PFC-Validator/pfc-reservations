@@ -29,9 +29,9 @@ fn main() {
         let secp: Secp256k1<All> = Secp256k1::new();
         let signing_key_phrase = env::var("DEBUG_RESERVATION_AUTH")
             .expect("Environment Variable 'DEBUG_RESERVATION_AUTH' Not present");
-
         let signing_key = PrivateKey::from_words(&secp, &signing_key_phrase).unwrap();
         let json = r#"random/{"token_uri":"https://www.merriam-webster.com/dictionary/petrify","image":null,"image_data":null,"external_url":null,"description":null,"name":null,"attributes":[{"display_type":null,"trait_type":"gender","value":"male"},{"display_type":null,"trait_type":"name","value":"Jim Morrisson"}],"background_color":null,"animation_url":null,"youtube_url":null}"#;
+        let json = r#"random/{"token_uri":"https://www.merriam-webster.com/dictionary/petrify","image":null,"image_data":null,"external_url":null,"description":null,"name":null,"attributes":[{"display_type":null,"trait_type":"gender","value":"male"},{"display_type":null,"trait_type":"name","value":"Jim Morrisson"}],"background_color":null,"animation_url":null,"youtube_url":null,"current_status":null}"#;
         let sig = signing_key.sign(&secp, &json).unwrap();
         println!("Message:\n{}", json);
         println!("Signature:\n{}", sig.signature);

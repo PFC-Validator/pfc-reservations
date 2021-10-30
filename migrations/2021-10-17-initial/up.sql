@@ -26,8 +26,8 @@ create table NFT
     txhash                     char(64)         default null,
     tx_error                   varchar(2000)    default null,
     token_id                   varchar(255)     default null,
-    tx_retry_count             integer          default 0
-
+    tx_retry_count             integer          default 0,
+    in_mint_run                boolean          default false
 );
 create index txhash on nft(txhash);
 create index token_id on nft(token_id);

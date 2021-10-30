@@ -1,10 +1,11 @@
 use crate::auth::{generate_signature, is_valid_address, verify_signature, SignatureB64};
-use crate::db::{get_nft, nft_assign_tx_result, set_tx_for_nft, set_tx_hash_for_nft};
+use crate::db::{
+    get_nft, nft_assign_owner, nft_assign_tx_result, set_tx_for_nft, set_tx_hash_for_nft,
+};
 use crate::models::NFT;
-use crate::requests::ReservationTxResultRequest;
 use crate::requests::{
-    AssignHashRequest, AssignSignedTxRequest, ErrorResponse, Metadata, MetadataResponse,
-    NewReservationResponse,
+    AssignHashRequest, AssignOwner, AssignSignedTxRequest, ErrorResponse, Metadata,
+    MetadataResponse, NewReservationResponse, ReservationTxResultRequest,
 };
 use crate::{NFTDatabase, ReservationState};
 use chrono::Utc;
@@ -401,15 +402,82 @@ async fn assign_tx_result(
     .await
 }
 
+#[options("/assign-owner")]
+async fn options_assign_owner() -> rocket::response::status::Custom<String> {
+    rocket::response::status::Custom(Status::new(200), "OK".into())
+}
+#[post("/assign-owner", format = "json", data = "<assign_owner>")]
+async fn assign_owner(
+    conn: NFTDatabase,
+    signature: SignatureB64,
+    state: &State<ReservationState>,
+    assign_owner: Json<AssignOwner>,
+) -> (Status, Result<Json<bool>, Json<ErrorResponse>>) {
+    let assign_owner_stuff = assign_owner.into_inner();
+    let assign_owner_stuff_json = serde_json::to_string(&assign_owner_stuff).unwrap();
+    log::debug!("assign_assign_owner:{}", assign_owner_stuff_json);
+    if let Err(e) = verify_signature(
+        &assign_owner_stuff_json,
+        &signature,
+        &state.verification_key,
+    ) {
+        if state.debug_mode {
+            log::warn!("IGNORING SIGNATURES");
+        } else {
+            return (
+                Status::new(403),
+                Err(Json(ErrorResponse {
+                    code: 403,
+                    message: e.to_string(),
+                })),
+            );
+        }
+    }
+    //  let tx = hash_result_stuff.tx;
+    conn.run(move |c| {
+        let assign_result = nft_assign_owner(
+            c,
+            assign_owner_stuff.wallet_address,
+            assign_owner_stuff.token_id,
+        );
+
+        match assign_result {
+            Ok(rows_updated) => {
+                if rows_updated == 1 {
+                    (Status::new(200), Ok(Json(true)))
+                } else {
+                    (
+                        Status::new(500),
+                        Err(Json(ErrorResponse {
+                            code: 500,
+                            message: String::from("token/wallet not found"),
+                        })),
+                    )
+                }
+            }
+            Err(e) => (
+                Status::new(500),
+                Err(Json(ErrorResponse {
+                    code: 500,
+                    message: e.to_string(),
+                })),
+            ),
+        }
+    })
+    .await
+}
+
 pub fn get_routes() -> Vec<Route> {
     routes![
         get_signed_metadata,
         assign_txhash,
         assign_tx,
         assign_tx_result,
+        assign_owner,
         options_assign_txhash,
         options_assign_tx,
         options_signed_metadata,
-        options_assign_tx_result
+        options_assign_tx_result,
+        options_assign_owner
     ]
 }

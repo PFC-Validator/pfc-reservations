@@ -7,7 +7,6 @@ pub mod requests;
 
 #[macro_use]
 extern crate rocket;
-
 use chrono::Duration;
 use rocket::fairing::{Fairing, Info, Kind};
 use rocket::figment::{
@@ -51,6 +50,7 @@ impl Fairing for CORS {
 }
 #[database("NFT")]
 pub struct NFTDatabase(rocket_sync_db_pools::postgres::Client);
+
 pub struct ReservationState {
     pub signing_key: PrivateKey,
     pub verification_key: Vec<String>,
@@ -77,7 +77,7 @@ fn rocket() -> Rocket<Build> {
     let signing_key = PrivateKey::from_words(&secp, &signing_key_phrase).unwrap();
     let public_keys = env::var("RESERVATION_AUTH_PUBLIC_KEY")
         .unwrap()
-        .split(",")
+        .split(',')
         .map(|key| key.to_string())
         .collect::<Vec<String>>();
     let max_reservations: usize = env::var("MAX_RESERVATIONS").unwrap().parse().unwrap();
@@ -115,6 +115,7 @@ fn rocket() -> Rocket<Build> {
     if debug_mode {
         log::error!("RUNNING IN DEBUG MODE: Signature generation/verification omitted")
     }
+
     rocket::custom(figment)
         .manage(reservation_state)
         .attach(NFTDatabase::fairing())
