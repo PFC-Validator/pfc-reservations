@@ -695,7 +695,7 @@ pub fn do_reservation_in_stage(
                                     from nft n, json_array_elements(n.meta_data -> 'attributes' ) att
                                     where assigned = false 
                                      and (reserved=false or reserved_until < now())
-                                     and name ='$3'
+                                     and name =$3
                                      and has_submit_error=false
                                      and in_process=false
                                     order by random()
