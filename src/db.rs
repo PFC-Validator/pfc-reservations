@@ -687,7 +687,31 @@ pub fn do_reservation_in_stage(
     reserved_until: &DateTime<Utc>,
 ) -> Result<Vec<Row>, (Status, Json<ErrorResponse>)> {
     let pg_ts: &DateTime<chrono::offset::Utc> = reserved_until;
-    let query = if let Some(att_type) = &stage.attribute_type {
+    let query = if &stage.code == "bagel" {
+        let select_stmt = r#"                                
+                                update nft set reserved=true, reserved_to_wallet_address=$1 ,reserved_until=$2, in_mint_run=$4
+                                where id in (
+                                    select id as available
+                                    from nft n, json_array_elements(n.meta_data -> 'attributes' ) att
+                                    where assigned = false 
+                                     and (reserved=false or reserved_until < now())
+                                     and name ='$3'
+                                     and has_submit_error=false
+                                     and in_process=false
+                                    order by random()
+                                    limit 1
+                                ) returning id,meta_data "#;
+        let stmt_reserve_nft: Statement = conn.prepare(select_stmt).unwrap();
+        conn.query(
+            &stmt_reserve_nft,
+            &[
+                &String::from(wallet_address),
+                pg_ts,
+                &String::from("Evan Bagelmeister"),
+                &is_mint,
+            ],
+        )
+    } else if let Some(att_type) = &stage.attribute_type {
         if let Some(att_value) = &stage.attribute_value {
             log::info!(
                 "Stage: {} {}/{} - {}",
