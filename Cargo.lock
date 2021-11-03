@@ -1325,7 +1325,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.8.2",
- "terra-rust-api 1.0.12",
+ "terra-rust-api",
  "terra-rust-wallet",
  "thiserror",
  "thread_local",
@@ -2299,41 +2299,9 @@ dependencies = [
 
 [[package]]
 name = "terra-rust-api"
-version = "1.0.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ea28f166bcb0f2e4b475bd1c9fc092e549cb50a30ef7b34d511a1628a5948f70"
-dependencies = [
- "anyhow",
- "base64",
- "bitcoin",
- "chrono",
- "ed25519",
- "ed25519-dalek",
- "erased-serde",
- "futures",
- "hex",
- "hkd32",
- "lazy_static",
- "log",
- "num-traits",
- "rand_core 0.5.1",
- "regex",
- "reqwest",
- "rust-crypto",
- "rust_decimal",
- "rust_decimal_macros",
- "rustc-serialize",
- "secp256k1",
- "serde",
- "serde_json",
- "subtle-encoding",
- "thiserror",
- "tokio",
-]
-
-[[package]]
-name = "terra-rust-api"
 version = "1.0.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2ff2236039195b82af3a02bc7ed8d105c916292e6ef4ed9162b4d2f11b31a338"
 dependencies = [
  "anyhow",
  "base64",
@@ -2376,7 +2344,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
- "terra-rust-api 1.0.11",
+ "terra-rust-api",
  "thiserror",
 ]
 
