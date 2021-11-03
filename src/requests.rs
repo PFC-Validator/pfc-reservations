@@ -132,7 +132,7 @@ pub struct AssignSignedTxRequest {
     pub signed_tx: String,
 }
 /// submit signed request to process TX result
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ReservationTxResultRequest {
     /// the hash for the request
     pub tx: String,
@@ -153,8 +153,11 @@ pub struct OpenStageWallet {
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct MintReservation {
+    /// wallet requesting reservation
     pub wallet_address: String,
+    /// the 'id' of the NFT in our system
     pub nft_id: Uuid,
+    /// the meta data to mint it
     pub meta_data: Metadata,
 }
 

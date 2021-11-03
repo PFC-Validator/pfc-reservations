@@ -564,6 +564,29 @@ pub fn reservations_in_mint_process(
         Err(db_err) => Err(db_err),
     }
 }
+pub fn reservations_stuck_in_mint_process(
+    conn: &mut Client,
+    limit: i64,
+) -> Result<Vec<MintReservation>, Error> {
+    let query = conn.query(
+        "select reserved_to_wallet_address, id,meta_data from nft where in_process = false and assigned=false and has_submit_error=false and in_mint_run=true limit $1",
+        &[&limit],
+    );
+    match query {
+        Ok(rows) => Ok(rows
+            .iter()
+            .map(|r| {
+                let meta: Metadata = serde_json::from_value(r.get(2)).unwrap();
+                MintReservation {
+                    wallet_address: r.get(0),
+                    nft_id: r.get(1),
+                    meta_data: meta,
+                }
+            })
+            .collect::<Vec<MintReservation>>()),
+        Err(db_err) => Err(db_err),
+    }
+}
 pub fn reservations_in_mint_reserved(conn: &mut Client, limit: i64) -> Result<Vec<String>, Error> {
     let query = conn.query(
         "select name from nft where assigned=false and reserved = true and has_submit_error=false and in_mint_run=true limit $1",

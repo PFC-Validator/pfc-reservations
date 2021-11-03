@@ -2,6 +2,7 @@ use crate::auth::{is_valid_address, verify_signature, SignatureB64};
 use crate::db::{
     do_reservation, get_open_wallets_for_stage, get_reservations_for_wallet, get_stage,
     mint_nft_for_wallet_in_stage, reservations_in_mint_process, reservations_in_mint_reserved,
+    reservations_stuck_in_mint_process,
 };
 use crate::handlers::mint::build_metadata_response;
 use crate::requests::{ErrorResponse, NewReservationRequest, NewReservationResponse, Reservation};
@@ -163,6 +164,27 @@ async fn get_in_mint_process(
         ),
     }
 }
+#[get("/stuck-mint-process")]
+async fn get_stuck_mint_process(
+    conn: NFTDatabase,
+) -> (
+    Status,
+    Result<Json<Vec<MintReservation>>, Json<ErrorResponse>>,
+) {
+    match conn
+        .run(move |c| reservations_stuck_in_mint_process(c, 100))
+        .await
+    {
+        Ok(x) => (Status::new(200), Ok(Json(x))),
+        Err(e) => (
+            Status::new(500),
+            Err(Json(ErrorResponse {
+                code: 500,
+                message: e.to_string(),
+            })),
+        ),
+    }
+}
 /// These have been reserved by the system previously, but don't have a TX ID/in_process flag set
 #[get("/in-mint-reserved")]
 async fn get_in_mint_reserved(
@@ -280,6 +302,7 @@ pub fn get_routes() -> Vec<Route> {
         get_in_process,
         get_in_mint_process,
         get_in_mint_reserved,
-        get_free_stage
+        get_free_stage,
+        get_stuck_mint_process
     ]
 }
