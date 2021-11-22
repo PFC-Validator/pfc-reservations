@@ -23,7 +23,7 @@ If you think this was useful, feel free to delegate to the [PFC](https://station
 - two level signature verification. (admin functions require a different signature than the user-facing 'reservation' functions)
 
 # Typescript
-This is  [JS](https://github.com/PFC-Validator/pfc-reservations/blob/main/js/nft.ts) I use to interact with the reservation server, and the Terra blockchain.
+This is the [JS](https://github.com/PFC-Validator/pfc-reservations/blob/main/js/nft.ts) I use to interact with the reservation server, and the Terra blockchain.
 
 I use next, but it should work elsewhere.
 I have the following in my '.env' file:
