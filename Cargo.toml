@@ -24,7 +24,7 @@ chrono = { version = "0.4.19", features = ["serde"] }
 #terra-rust-api = {version= "1.0.10", git="https://github.com/PFC-Validator/terra-rust"}
 #terra-rust-api = {version= "1.0.12", path="../../terra-rust/terra-rust-api"}
 terra-rust-api="1.0.12"
-secp256k1 = { version = "0.20.3", default-features = false }
+secp256k1 = { version = "0.22.2", default-features = false }
 async-trait = "0.1.51"
 thread_local = "1.1.3"
 sha2 = "0.8.0"
